@@ -3,3 +3,5 @@ mason_demo
 *.o
 .vscode/
 *.swp
+compile_commands.json
+.cache/
