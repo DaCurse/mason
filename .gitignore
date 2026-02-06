@@ -1,0 +1,5 @@
+mason_demo
+*.exe
+*.o
+.vscode/
+*.swp
