@@ -5,3 +5,4 @@ mason_demo
 *.swp
 compile_commands.json
 .cache/
+build/

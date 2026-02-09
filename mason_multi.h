@@ -21,7 +21,7 @@ typedef struct mason_value {
         double d;
         char *s;
         bool b;
-        MASON_Parsed *ast;
+        MASON_Parsed ast;
     } value;
 } Mason_RawValue;
 
@@ -43,7 +43,7 @@ static inline Mason_RawValue mason_rawvalue_double(double val) {
 }
 
 static inline Mason_RawValue mason_rawvalue_string(const char *val) {
-    Mason_RawValue v = {MASON_VALUE_STRING, {.s = val ? mason_strdup(val) : NULL}};
+    Mason_RawValue v = {MASON_VALUE_STRING, {.s = val ? _mason_strdup(val) : NULL}};
     return v;
 }
 
@@ -57,12 +57,12 @@ static inline Mason_RawValue mason_rawvalue_null(void) {
     return v;
 }
 
-static inline Mason_RawValue mason_rawvalue_object(MASON_Parsed *ast) {
+static inline Mason_RawValue mason_rawvalue_object(MASON_Parsed ast) {
     Mason_RawValue v = {MASON_VALUE_OBJECT, {.ast = ast}};
     return v;
 }
 
-static inline Mason_RawValue mason_rawvalue_array(MASON_Parsed *arr) {
+static inline Mason_RawValue mason_rawvalue_array(MASON_Parsed arr) {
     Mason_RawValue v = {MASON_VALUE_ARRAY, {.ast = arr}};
     return v;
 }
@@ -75,9 +75,11 @@ static inline void mason_rawvalue_free(Mason_RawValue *val) {
         free(val->value.s);
         break;
     case MASON_VALUE_OBJECT:
-        // Objects are references to parent JSON, not owned
+        mason_delete(val->value.ast);
+        break;
     case MASON_VALUE_ARRAY:
-        // Arrays are references to parent JSON, not owned
+        mason_delete(val->value.ast);
+        break;
     default:
         break;
     }
@@ -85,49 +87,57 @@ static inline void mason_rawvalue_free(Mason_RawValue *val) {
 
 /* Field Type Macro */
 
-#define MASON_ARRAY_MULTI_RAW(name) \
-    Mason_RawValue *name;           \
+#define _MASON_ARRAY_MULTI_RAW(name) \
+    Mason_RawValue *name;            \
     size_t name##_count;
 
 /* Parser */
 
-#define MASON_PARSE_ARRAY_MULTI(name)                                                    \
-    item = _MASON_BACKEND_GET_FIELD(json, #name);                                        \
-    if (_MASON_BACKEND_IS_ARRAY(item)) {                                                 \
-        obj->name##_count = _MASON_BACKEND_ARRAY_SIZE(item);                             \
-        obj->name = (Mason_RawValue *)calloc(obj->name##_count, sizeof(Mason_RawValue)); \
-        for (size_t i = 0; i < obj->name##_count; i++) {                                 \
-            MASON_Parsed *elem = _MASON_BACKEND_ARRAY_GET(item, i);                      \
-            if (_MASON_BACKEND_IS_int64_t(elem)) {                                       \
-                double d = _MASON_BACKEND_GET_double(elem);                              \
-                if (d == (int64_t)d) {                                                   \
-                    if (d >= INT32_MIN && d <= INT32_MAX) {                              \
-                        obj->name[i] = mason_rawvalue_int32_t((int32_t)d);               \
-                    } else {                                                             \
-                        obj->name[i] = mason_rawvalue_int64_t((int64_t)d);               \
-                    }                                                                    \
-                } else {                                                                 \
-                    obj->name[i] = mason_rawvalue_double(d);                             \
-                }                                                                        \
-            } else if (_MASON_BACKEND_IS_string(elem)) {                                 \
-                obj->name[i] = mason_rawvalue_string(_MASON_BACKEND_GET_string(elem));   \
-            } else if (_MASON_BACKEND_IS_bool(elem)) {                                   \
-                obj->name[i] = mason_rawvalue_bool(_MASON_BACKEND_GET_bool(elem));       \
-            } else if (_MASON_BACKEND_IS_NULL(elem)) {                                   \
-                obj->name[i] = mason_rawvalue_null();                                    \
-            } else if (_MASON_BACKEND_IS_ARRAY(elem)) {                                  \
-                obj->name[i] = mason_rawvalue_array(elem);                               \
-            } else if (_MASON_BACKEND_IS_OBJECT(elem)) {                                 \
-                obj->name[i] = mason_rawvalue_object(elem);                              \
-            }                                                                            \
-        }                                                                                \
+#define _MASON_PARSE_ARRAY_MULTI(name)                                                     \
+    item = _MASON_BACKEND_GET_FIELD(json, #name);                                          \
+    if (_MASON_BACKEND_IS_ARRAY(item)) {                                                   \
+        obj->name##_count = _MASON_BACKEND_ARRAY_SIZE(item);                               \
+        obj->name = (Mason_RawValue *)calloc(obj->name##_count, sizeof(Mason_RawValue));   \
+        if (obj->name) {                                                                   \
+            for (size_t i = 0; i < obj->name##_count; i++) {                               \
+                MASON_Parsed elem = _MASON_BACKEND_ARRAY_GET(item, i);                     \
+                if (_MASON_BACKEND_IS_int64_t(elem)) {                                     \
+                    double d = _MASON_BACKEND_GET_double(elem);                            \
+                    if (d == (int64_t)d) {                                                 \
+                        if (d >= INT32_MIN && d <= INT32_MAX) {                            \
+                            obj->name[i] = mason_rawvalue_int32_t((int32_t)d);             \
+                        } else {                                                           \
+                            obj->name[i] = mason_rawvalue_int64_t((int64_t)d);             \
+                        }                                                                  \
+                    } else {                                                               \
+                        obj->name[i] = mason_rawvalue_double(d);                           \
+                    }                                                                      \
+                } else if (_MASON_BACKEND_IS_string(elem)) {                               \
+                    obj->name[i] = mason_rawvalue_string(_MASON_BACKEND_GET_string(elem)); \
+                } else if (_MASON_BACKEND_IS_bool(elem)) {                                 \
+                    obj->name[i] = mason_rawvalue_bool(_MASON_BACKEND_GET_bool(elem));     \
+                } else if (_MASON_BACKEND_IS_NULL(elem)) {                                 \
+                    obj->name[i] = mason_rawvalue_null();                                  \
+                } else if (_MASON_BACKEND_IS_ARRAY(elem)) {                                \
+                    MASON_Parsed dup = _MASON_BACKEND_DUPLICATE(elem);                     \
+                    if (dup)                                                               \
+                        obj->name[i] = mason_rawvalue_array(dup);                          \
+                } else if (_MASON_BACKEND_IS_OBJECT(elem)) {                               \
+                    MASON_Parsed dup = _MASON_BACKEND_DUPLICATE(elem);                     \
+                    if (dup)                                                               \
+                        obj->name[i] = mason_rawvalue_object(dup);                         \
+                }                                                                          \
+            }                                                                              \
+        } else {                                                                           \
+            obj->name##_count = 0;                                                         \
+        }                                                                                  \
     }
 
 /* Serializer */
 
-#define MASON_SERIALIZE_ARRAY_MULTI(name)                                                                 \
+#define _MASON_SERIALIZE_ARRAY_MULTI(name)                                                                \
     {                                                                                                     \
-        MASON_Parsed *arr = _MASON_BACKEND_CREATE_ARRAY();                                                \
+        MASON_Parsed arr = _MASON_BACKEND_CREATE_ARRAY();                                                 \
         for (size_t i = 0; i < obj->name##_count; i++) {                                                  \
             switch (obj->name[i].type) {                                                                  \
             case MASON_VALUE_INT32:                                                                       \
@@ -154,12 +164,16 @@ static inline void mason_rawvalue_free(Mason_RawValue *val) {
                 break;                                                                                    \
             case MASON_VALUE_ARRAY:                                                                       \
                 if (obj->name[i].value.ast) {                                                             \
-                    _MASON_BACKEND_ARRAY_APPEND(arr, obj->name[i].value.ast);                             \
+                    MASON_Parsed dup = _MASON_BACKEND_DUPLICATE(obj->name[i].value.ast);                  \
+                    if (dup)                                                                              \
+                        _MASON_BACKEND_ARRAY_APPEND(arr, dup);                                            \
                 }                                                                                         \
                 break;                                                                                    \
             case MASON_VALUE_OBJECT:                                                                      \
                 if (obj->name[i].value.ast) {                                                             \
-                    _MASON_BACKEND_ARRAY_APPEND(arr, obj->name[i].value.ast);                             \
+                    MASON_Parsed dup = _MASON_BACKEND_DUPLICATE(obj->name[i].value.ast);                  \
+                    if (dup)                                                                              \
+                        _MASON_BACKEND_ARRAY_APPEND(arr, dup);                                            \
                 }                                                                                         \
                 break;                                                                                    \
             default:                                                                                      \
@@ -172,9 +186,9 @@ static inline void mason_rawvalue_free(Mason_RawValue *val) {
 /* Print */
 #ifdef MASON_PRINT_IMPL
 
-#define MASON_PRINT_ARRAY_MULTI(name)                                                            \
+#define _MASON_PRINT_ARRAY_MULTI(name)                                                           \
     do {                                                                                         \
-        MASON_PRINT_INDENT(_mason_indent);                                                       \
+        _MASON_PRINT_INDENT(_mason_indent);                                                      \
         printf("%s[%zu]: [", #name, obj->name##_count);                                          \
         for (size_t i = 0; i < obj->name##_count; i++) {                                         \
             switch (obj->name[i].type) {                                                         \
@@ -214,7 +228,7 @@ static inline void mason_rawvalue_free(Mason_RawValue *val) {
 
 /* Memory Management */
 
-#define MASON_FREE_ARRAY_MULTI(name)                     \
+#define _MASON_FREE_ARRAY_MULTI(name)                    \
     if (obj->name) {                                     \
         for (size_t i = 0; i < obj->name##_count; i++) { \
             mason_rawvalue_free(&obj->name[i]);          \

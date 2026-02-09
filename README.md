@@ -20,7 +20,7 @@ Mason lets you declare C structs that map to JSON objects using X-macros. From a
 
 - Fields aren't required, if they are missing, their value in the struct is zeroed out
 - No support for default values
-- No support for arrays of mixed non-primitive types (e.g. array of objects)
+- No support for arrays of mixed struct types.
 
 ### Supported field types
 
@@ -33,7 +33,7 @@ Mason lets you declare C structs that map to JSON objects using X-macros. From a
 | `ARRAY_OBJECT(type, name)` | Array of structs | Inline array (not pointer-to-pointer) |
 
 > [!NOTE]
-> Mixed arrays don't parse objects/arrays, they just store the backend's AST nodes as-is.
+> `ARRAY_MULTI` won't parse objects/arrays into Mason structs/arrays of structs. They store deep-copied backend AST handles.
 
 ## Quick start
 
@@ -65,11 +65,11 @@ This gives you `User_from_json`, `User_to_json`, `User_print`, `User_free` [and 
 
 ## Type aliases
 
-If you have a type that's really just a primitive under the hood (like an enum), you can use `MASON_BASE_TYPE_##type` to treat it as that primitive.
+If you have a type that's really just a primitive under the hood (like an enum), you can define `MASON_TYPE_ALIAS_##type` to treat it as that primitive.
 
 ```c
 typedef enum { ROLE_USER, ROLE_ADMIN } Role;
-#define MASON_BASE_TYPE_Role int32_t
+#define MASON_TYPE_ALIAS_Role int32_t
 ```
 
 Now you can use `FIELD(Role, role)` in your field list and Mason will parse/serialize it as an `int32_t`.
@@ -82,13 +82,25 @@ For a struct named `Foo`, `MASON_STRUCT_DEFINE` + `MASON_IMPL` generates:
 | --- | --- |
 | `Foo_from_json(const char *str)` | Parse a JSON string into a heap-allocated `Foo *` |
 | `Foo_from_json_sized(const char *str, size_t len)` | Same, but with explicit length |
-| `Foo_from_parsed(MASON_Parsed *json)` | Parse from an already-parsed JSON tree |
-| `Foo_to_json(Foo *obj)` | Serialize to a `MASON_Parsed *` tree |
-| `Foo_to_string(MASON_Parsed *json)` | Convert a JSON tree to a `char *` (caller frees) |
+| `Foo_from_parsed(MASON_Parsed json)` | Parse from an already-parsed JSON handle |
+| `Foo_to_json(Foo *obj)` | Serialize to a `MASON_Parsed` handle |
+| `Foo_to_string(MASON_Parsed json)` | Convert a JSON handle to a `char *` (user frees) |
 | `Foo_string_free(char *str)` | Free a string from `_to_string` |
+| `Foo_free_json(MASON_Parsed json)` | Free a JSON handle returned by `_to_json` |
 | `Foo_free(Foo *obj)` | Free the struct and all owned memory |
 | `Foo_free_members(Foo *obj)` | Free owned memory without freeing the struct itself |
 | `Foo_print(Foo *obj)` | Pretty-print (requires `MASON_PRINT_IMPL`) |
+
+### Public helpers
+
+There are other public helper functions, but these are the ones you'd most likely use.
+
+| Function | Description |
+| --- | --- |
+| `mason_parse(const char *json_str)` | Parse JSON text into a `MASON_Parsed` handle |
+| `mason_parse_sized(const char *json_str, size_t len)` | Parse with explicit length into a `MASON_Parsed` handle |
+| `mason_parse_error(void)` | Get the backend's last parse error pointer |
+| `mason_delete(MASON_Parsed json)` | Free a `MASON_Parsed` handle |
 
 ## Implementing a backend
 
@@ -106,60 +118,48 @@ Then include it before `mason.h`:
 
 ### Required macros
 
-Here's the full list, using the [cJSON backend](backends/cjson.h) as a reference.
+Here's the full list, using the [cJSON backend](backends/cjson.h) as an example.
 
-> [!NOTE]
-> The backend abstraction assumes a lifetime management model similar to cJSON.
+Notes:
 
-```c
-/* The underlying JSON node type */
-#define _MASON_BACKEND_JSON_T              cJSON
+- The backend abstraction assumes a lifetime management model similar to cJSON. More details in table below.
+- The JSON spec permits representing numbers as IEEE-754 doubles, so integers beyond $2^{53}$ can lose precision on parse/round-trip.
+- `_MASON_BACKEND_JSON_T` must be a pointer-like handle type. All backend macros operate on and return this type directly (not pointers to it).
+- Backends must ensure that `_MASON_BACKEND_GET_*` and `_MASON_BACKEND_ARRAY_GET` return pointers that remain valid until `_MASON_BACKEND_DELETE()` is called on the `_MASON_BACKEND_JSON_T` instance.
 
-/* Parsing */
-#define _MASON_BACKEND_PARSE(str)          cJSON_Parse(str)
-#define _MASON_BACKEND_PARSE_SIZED(s, len) cJSON_ParseWithLength(s, len)
-#define _MASON_BACKEND_PARSE_ERROR()       cJSON_GetErrorPtr()
-
-/* Field access */
-#define _MASON_BACKEND_GET_FIELD(json, name) cJSON_GetObjectItemCaseSensitive(json, name)
-
-/* Type checks - one per primitive */
-#define _MASON_BACKEND_IS_int32_t(item)    cJSON_IsNumber(item)
-#define _MASON_BACKEND_IS_int64_t(item)    cJSON_IsNumber(item)
-#define _MASON_BACKEND_IS_double(item)     cJSON_IsNumber(item)
-#define _MASON_BACKEND_IS_string(item)     (cJSON_IsString(item) && (item)->valuestring)
-#define _MASON_BACKEND_IS_bool(item)       cJSON_IsBool(item)
-#define _MASON_BACKEND_IS_ARRAY(item)      cJSON_IsArray(item)
-#define _MASON_BACKEND_IS_OBJECT(item)     cJSON_IsObject(item)
-#define _MASON_BACKEND_IS_NULL(item)       cJSON_IsNull(item)
-
-/* Value getters */
-#define _MASON_BACKEND_GET_int32_t(item)   ((int32_t)(item)->valueint)
-#define _MASON_BACKEND_GET_int64_t(item)   ((int64_t)(item)->valuedouble)
-#define _MASON_BACKEND_GET_double(item)    ((item)->valuedouble)
-#define _MASON_BACKEND_GET_string(item)    ((item)->valuestring)
-#define _MASON_BACKEND_GET_bool(item)      cJSON_IsTrue(item)
-
-/* Array access */
-#define _MASON_BACKEND_ARRAY_SIZE(arr)     cJSON_GetArraySize(arr)
-#define _MASON_BACKEND_ARRAY_GET(arr, idx) cJSON_GetArrayItem(arr, idx)
-
-/* Node creation */
-#define _MASON_BACKEND_CREATE_OBJECT()     cJSON_CreateObject()
-#define _MASON_BACKEND_CREATE_ARRAY()      cJSON_CreateArray()
-#define _MASON_BACKEND_CREATE_int32_t(v)   cJSON_CreateNumber(v)
-#define _MASON_BACKEND_CREATE_int64_t(v)   cJSON_CreateNumber((double)(v))
-#define _MASON_BACKEND_CREATE_double(v)    cJSON_CreateNumber(v)
-#define _MASON_BACKEND_CREATE_string(v)    cJSON_CreateString(v)
-#define _MASON_BACKEND_CREATE_bool(v)      cJSON_CreateBool(v)
-#define _MASON_BACKEND_CREATE_NULL()       cJSON_CreateNull()
-
-/* Tree manipulation */
-#define _MASON_BACKEND_OBJECT_ADD(obj, key, val) cJSON_AddItemToObject(obj, key, val)
-#define _MASON_BACKEND_ARRAY_APPEND(arr, val)    cJSON_AddItemToArray(arr, val)
-
-/* Cleanup */
-#define _MASON_BACKEND_DELETE(json)        cJSON_Delete(json)
-#define _MASON_BACKEND_TO_STRING(json)     cJSON_Print(json)
-#define _MASON_BACKEND_STRING_FREE(str)    free(str)
-```
+| Macro | cJSON example | Lifetime/ownership notes |
+| --- | --- | --- |
+| `_MASON_BACKEND_JSON_T` | `cJSON*` | Opaque backend JSON handle (node or root). Owned by caller unless stated otherwise. |
+| `_MASON_BACKEND_PARSE(str)` | `cJSON_Parse(str)` | Parses text into an owned backend node. |
+| `_MASON_BACKEND_PARSE_SIZED(s, len)` | `cJSON_ParseWithLength(s, len)` | Parses text into an owned backend node. |
+| `_MASON_BACKEND_PARSE_ERROR()` | `cJSON_GetErrorPtr()` | Returns pointer to static error info. |
+| `_MASON_BACKEND_GET_FIELD(json, name)` | `cJSON_GetObjectItemCaseSensitive(json, name)` | Field lookup returns a borrowed node pointer. |
+| `_MASON_BACKEND_IS_int32_t(item)` | `cJSON_IsNumber(item)` | |
+| `_MASON_BACKEND_IS_int64_t(item)` | `cJSON_IsNumber(item)` | |
+| `_MASON_BACKEND_IS_double(item)` | `cJSON_IsNumber(item)` | |
+| `_MASON_BACKEND_IS_string(item)` | `(cJSON_IsString(item) && (item)->valuestring)` | |
+| `_MASON_BACKEND_IS_bool(item)` | `cJSON_IsBool(item)` | |
+| `_MASON_BACKEND_IS_ARRAY(item)` | `cJSON_IsArray(item)` | |
+| `_MASON_BACKEND_IS_OBJECT(item)` | `cJSON_IsObject(item)` | |
+| `_MASON_BACKEND_IS_NULL(item)` | `cJSON_IsNull(item)` | |
+| `_MASON_BACKEND_GET_int32_t(item)` | `((int32_t)(item)->valueint)` | Reads scalar into a struct field. |
+| `_MASON_BACKEND_GET_int64_t(item)` | `((int64_t)(item)->valuedouble)` | Reads scalar into a struct field. |
+| `_MASON_BACKEND_GET_double(item)` | `((item)->valuedouble)` | Reads scalar into a struct field. |
+| `_MASON_BACKEND_GET_string(item)` | `((item)->valuestring)` | Reads a borrowed string pointer.  |
+| `_MASON_BACKEND_GET_bool(item)` | `cJSON_IsTrue(item)` | Reads scalar into a struct field. |
+| `_MASON_BACKEND_ARRAY_SIZE(arr)` | `cJSON_GetArraySize(arr)` | Reads array length. |
+| `_MASON_BACKEND_ARRAY_GET(arr, idx)` | `cJSON_GetArrayItem(arr, idx)` | Reads a borrowed element pointer. |
+| `_MASON_BACKEND_CREATE_OBJECT()` | `cJSON_CreateObject()` | Creates an owned object node from struct data. |
+| `_MASON_BACKEND_CREATE_ARRAY()` | `cJSON_CreateArray()` | Creates an owned array node from struct data. |
+| `_MASON_BACKEND_CREATE_int32_t(v)` | `cJSON_CreateNumber(v)` | Creates an owned scalar node from a struct value. |
+| `_MASON_BACKEND_CREATE_int64_t(v)` | `cJSON_CreateNumber((double)(v))` | Creates an owned scalar node from a struct value. |
+| `_MASON_BACKEND_CREATE_double(v)` | `cJSON_CreateNumber(v)` | Creates an owned scalar node from a struct value. |
+| `_MASON_BACKEND_CREATE_string(v)` | `cJSON_CreateString(v)` | Creates an owned string node from a struct value. |
+| `_MASON_BACKEND_CREATE_bool(v)` | `cJSON_CreateBool(v)` | Creates an owned bool node from a struct value. |
+| `_MASON_BACKEND_CREATE_NULL()` | `cJSON_CreateNull()` | Creates an owned null node. |
+| `_MASON_BACKEND_OBJECT_ADD(obj, key, val)` | `cJSON_AddItemToObject(obj, key, val)` | `val` becomes owned by `obj`. |
+| `_MASON_BACKEND_ARRAY_APPEND(arr, val)` | `cJSON_AddItemToArray(arr, val)` | `val` becomes owned by `arr`. |
+| `_MASON_BACKEND_DUPLICATE(node)` | `cJSON_Duplicate((node), 1)` | Creates an owned deep copy. |
+| `_MASON_BACKEND_DELETE(json)` | `cJSON_Delete(json)` | Frees owned backend nodes. |
+| `_MASON_BACKEND_TO_STRING(json)` | `cJSON_Print(json)` | Returns an allocated string. |
+| `_MASON_BACKEND_STRING_FREE(str)` | `free(str)` | Frees strings returned by `_MASON_BACKEND_TO_STRING`. |

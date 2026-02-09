@@ -7,7 +7,7 @@
 #include <stdint.h>
 
 /* Types */
-#define _MASON_BACKEND_JSON_T                    cJSON
+#define _MASON_BACKEND_JSON_T                    cJSON *
 
 /* Parsing */
 #define _MASON_BACKEND_PARSE(str)                cJSON_Parse(str)
@@ -51,6 +51,7 @@
 /* Tree manipulation */
 #define _MASON_BACKEND_OBJECT_ADD(obj, key, val) cJSON_AddItemToObject(obj, key, val)
 #define _MASON_BACKEND_ARRAY_APPEND(arr, val)    cJSON_AddItemToArray(arr, val)
+#define _MASON_BACKEND_DUPLICATE(node)           cJSON_Duplicate((node), 1)
 
 /* Cleanup */
 #define _MASON_BACKEND_DELETE(json)              cJSON_Delete(json)

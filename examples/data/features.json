@@ -1,0 +1,56 @@
+{
+  "owner": {
+    "name": "Ada",
+    "id": 1234567890,
+    "score": 98.5,
+    "active": true,
+    "status": 1,
+    "tags": [
+      "admin",
+      "beta"
+    ],
+    "address": {
+      "street": "Main St",
+      "zip": 90210
+    },
+    "history": [
+      {
+        "street": "1st Ave",
+        "zip": 11111
+      },
+      {
+        "street": "2nd Ave",
+        "zip": 22222
+      }
+    ],
+    "raw": [
+      1,
+      2.5,
+      "x",
+      null,
+      [],
+      {},
+      true
+    ]
+  },
+  "people": [
+    {
+      "name": "Bob",
+      "id": 42,
+      "score": 77.25,
+      "active": false,
+      "status": 0,
+      "tags": [
+        "guest"
+      ],
+      "address": {
+        "street": "Side Rd",
+        "zip": 30303
+      },
+      "history": [],
+      "raw": [
+        0
+      ]
+    }
+  ]
+}

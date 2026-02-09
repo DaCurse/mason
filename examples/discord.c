@@ -16,7 +16,7 @@ typedef enum {
     ACTIVITY_COMPETING,
 } ActivityType;
 
-#define MASON_BASE_TYPE_ActivityType int32_t
+#define MASON_TYPE_ALIAS_ActivityType int32_t
 
 #define ACTIVITY_BUTTON_FIELDS(FIELD, ARRAY, ARRAY_MULTI, OBJECT, ARRAY_OBJECT) \
     FIELD(string, label)                                                        \
@@ -44,36 +44,26 @@ MASON_IMPL(ActivityButton, ACTIVITY_BUTTON_FIELDS)
 MASON_IMPL(ActivityData, ACTIVITY_DATA_FIELDS)
 MASON_IMPL(UpdatePresenceData, UPDATE_PRESENCE_FIELDS)
 
-int main(void) {
-    printf("Parsing JSON to UpdatePresenceData\n");
-    // clang-format off
-    const char *json_str =
-        "{"
-            "\"since\": 17000000123,"
-            "\"status\": \"online\","
-            "\"afk\": false,"
-            "\"activities\": ["
-                "{"
-                    "\"name\": \"Playing Mason\","
-                    "\"type\": 0,"
-                    "\"created_at\": 4320456,"
-                    "\"url\": null,"
-                    "\"buttons\": ["
-                        "{\"label\": \"Join\", \"url\": \"https://example.com\"},"
-                        "{\"label\": \"Watch\", \"url\": \"https://example.com/live\"}"
-                    "]"
-                "}"
-            "],"
-            "\"test\":[1,2.5,\"a\", [], {}]"
-        "}";
-    // clang-format on
-    printf("Input JSON: %s\n\n", json_str);
+char *mason_read_file_to_string(const char *path, size_t *out_len);
 
-    UpdatePresenceData *presence = UpdatePresenceData_from_json(json_str);
-    if (!presence) {
-        printf("Failed to create UpdatePresenceData from JSON: %s\n", MASON_ParseError());
+int main(void) {
+    size_t json_len = 0;
+    char *json_str = mason_read_file_to_string("examples/data/discord.json", &json_len);
+    if (!json_str) {
+        printf("Failed to read examples/data/discord.json\n");
         return 1;
     }
+
+    printf("Parsing JSON to UpdatePresenceData\n");
+    printf("Input JSON: %s\n\n", json_str);
+
+    UpdatePresenceData *presence = UpdatePresenceData_from_json_sized(json_str, json_len);
+    if (!presence) {
+        printf("Failed to create UpdatePresenceData from JSON: %s\n", mason_parse_error());
+        free(json_str);
+        return 1;
+    }
+    free(json_str);
 
     printf("Parsed UpdatePresenceData:\n");
     UpdatePresenceData_print(presence);
