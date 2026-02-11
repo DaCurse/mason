@@ -28,7 +28,7 @@ Mason lets you declare C structs that map to JSON objects using X-macros. From a
 | --- | --- | --- |
 | `FIELD(type, name)` | Any primitive | `int32_t`, `int64_t`, `double`, `string`, `bool` |
 | `ARRAY(type, name)` | Typed array | Generates `type *name` + `size_t name_count` |
-| `ARRAY_MULTI(name)` | Mixed array | Heterogeneous `Mason_RawValue` tagged union |
+| `ARRAY_MULTI(name)` | Mixed array | Heterogeneous `MASON_RawValue` tagged union |
 | `OBJECT(type, name)` | Nested struct | Pointer to another Mason struct |
 | `ARRAY_OBJECT(type, name)` | Array of structs | Inline array (not pointer-to-pointer) |
 

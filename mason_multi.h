@@ -11,10 +11,10 @@ typedef enum {
     MASON_VALUE_BOOL,
     MASON_VALUE_OBJECT,
     MASON_VALUE_ARRAY
-} Mason_RawValueType;
+} MASON_RawValueType;
 
-typedef struct mason_value {
-    Mason_RawValueType type;
+typedef struct {
+    MASON_RawValueType type;
     union {
         int32_t i32;
         int64_t i64;
@@ -23,51 +23,51 @@ typedef struct mason_value {
         bool b;
         MASON_Parsed ast;
     } value;
-} Mason_RawValue;
+} MASON_RawValue;
 
 /* Helper constructors */
 
-static inline Mason_RawValue mason_rawvalue_int32_t(int32_t val) {
-    Mason_RawValue v = {MASON_VALUE_INT32, {.i32 = val}};
+static inline MASON_RawValue mason_rawvalue_int32_t(int32_t val) {
+    MASON_RawValue v = {MASON_VALUE_INT32, {.i32 = val}};
     return v;
 }
 
-static inline Mason_RawValue mason_rawvalue_int64_t(int64_t val) {
-    Mason_RawValue v = {MASON_VALUE_INT64, {.i64 = val}};
+static inline MASON_RawValue mason_rawvalue_int64_t(int64_t val) {
+    MASON_RawValue v = {MASON_VALUE_INT64, {.i64 = val}};
     return v;
 }
 
-static inline Mason_RawValue mason_rawvalue_double(double val) {
-    Mason_RawValue v = {MASON_VALUE_DOUBLE, {.d = val}};
+static inline MASON_RawValue mason_rawvalue_double(double val) {
+    MASON_RawValue v = {MASON_VALUE_DOUBLE, {.d = val}};
     return v;
 }
 
-static inline Mason_RawValue mason_rawvalue_string(const char *val) {
-    Mason_RawValue v = {MASON_VALUE_STRING, {.s = val ? _mason_strdup(val) : NULL}};
+static inline MASON_RawValue mason_rawvalue_string(const char *val) {
+    MASON_RawValue v = {MASON_VALUE_STRING, {.s = val ? _mason_strdup(val) : NULL}};
     return v;
 }
 
-static inline Mason_RawValue mason_rawvalue_bool(bool val) {
-    Mason_RawValue v = {MASON_VALUE_BOOL, {.b = val}};
+static inline MASON_RawValue mason_rawvalue_bool(bool val) {
+    MASON_RawValue v = {MASON_VALUE_BOOL, {.b = val}};
     return v;
 }
 
-static inline Mason_RawValue mason_rawvalue_null(void) {
-    Mason_RawValue v = {MASON_VALUE_NULL, {.i32 = 0}};
+static inline MASON_RawValue mason_rawvalue_null(void) {
+    MASON_RawValue v = {MASON_VALUE_NULL, {.i32 = 0}};
     return v;
 }
 
-static inline Mason_RawValue mason_rawvalue_object(MASON_Parsed ast) {
-    Mason_RawValue v = {MASON_VALUE_OBJECT, {.ast = ast}};
+static inline MASON_RawValue mason_rawvalue_object(MASON_Parsed ast) {
+    MASON_RawValue v = {MASON_VALUE_OBJECT, {.ast = ast}};
     return v;
 }
 
-static inline Mason_RawValue mason_rawvalue_array(MASON_Parsed arr) {
-    Mason_RawValue v = {MASON_VALUE_ARRAY, {.ast = arr}};
+static inline MASON_RawValue mason_rawvalue_array(MASON_Parsed arr) {
+    MASON_RawValue v = {MASON_VALUE_ARRAY, {.ast = arr}};
     return v;
 }
 
-static inline void mason_rawvalue_free(Mason_RawValue *val) {
+static inline void mason_rawvalue_free(MASON_RawValue *val) {
     if (!val)
         return;
     switch (val->type) {
@@ -88,7 +88,7 @@ static inline void mason_rawvalue_free(Mason_RawValue *val) {
 /* Field Type Macro */
 
 #define _MASON_ARRAY_MULTI_RAW(name) \
-    Mason_RawValue *name;            \
+    MASON_RawValue *name;            \
     size_t name##_count;
 
 /* Parser */
@@ -97,7 +97,7 @@ static inline void mason_rawvalue_free(Mason_RawValue *val) {
     item = _MASON_BACKEND_GET_FIELD(json, #name);                                          \
     if (_MASON_BACKEND_IS_ARRAY(item)) {                                                   \
         obj->name##_count = _MASON_BACKEND_ARRAY_SIZE(item);                               \
-        obj->name = (Mason_RawValue *)calloc(obj->name##_count, sizeof(Mason_RawValue));   \
+        obj->name = (MASON_RawValue *)calloc(obj->name##_count, sizeof(MASON_RawValue));   \
         if (obj->name) {                                                                   \
             for (size_t i = 0; i < obj->name##_count; i++) {                               \
                 MASON_Parsed elem = _MASON_BACKEND_ARRAY_GET(item, i);                     \
