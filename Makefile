@@ -4,7 +4,7 @@ LDFLAGS = -lcjson
 
 BUILD_DIR = build
 OBJ_DIR = $(BUILD_DIR)/obj
-HEADERS = mason.h mason_multi.h backends/cjson.h
+HEADERS = mason.h mason_multi.h
 EXAMPLES = $(filter-out examples/utils.c,$(wildcard examples/*.c))
 BINS = $(patsubst examples/%.c,$(BUILD_DIR)/mason_%,$(EXAMPLES))
 UTILS_OBJ = $(OBJ_DIR)/utils.o
@@ -31,7 +31,7 @@ clean:
 	rm -rf $(BUILD_DIR)
 
 format:
-	clang-format -i examples/*.c *.h backends/*.h
+	clang-format -i examples/*.c *.h
 
 san: CFLAGS += -fsanitize=address,undefined -fno-omit-frame-pointer
 san: LDFLAGS += -fsanitize=address,undefined

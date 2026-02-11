@@ -1,4 +1,5 @@
-#ifdef _MASON_BACKEND
+#ifndef MASON_PRINT_H
+#define MASON_PRINT_H
 
 /* Print Implementation */
 #ifdef MASON_PRINT_IMPL
@@ -153,5 +154,4 @@ static inline void mason_print_array_elem_bool(bool v) { printf("%s", v ? "true"
 
 #endif // MASON_PRINT_IMPL
 
-#endif // _MASON_BACKEND
-
+#endif // MASON_PRINT_H

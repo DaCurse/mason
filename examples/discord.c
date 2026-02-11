@@ -3,7 +3,6 @@
 #include <stdio.h>
 
 #define MASON_PRINT_IMPL
-#define MASON_USE_CJSON
 #include "../mason.h"
 
 // https://discord.com/developers/docs/topics/opcodes-and-status-codes#gateway-gateway-opcodes
@@ -78,7 +77,7 @@ int main(void) {
     printf("Parsing JSON to GatewayEventPayload\n");
     printf("Input JSON: %s\n\n", json_str);
 
-    GatewayEventPayload *payload = GatewayEventPayload_from_json_sized(json_str, json_len);
+    GatewayEventPayload *payload = GatewayEventPayload_from_string_sized(json_str, json_len);
     if (!payload) {
         printf("Failed to create GatewayEventPayload from JSON: %s\n", mason_parse_error());
         free(json_str);

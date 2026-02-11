@@ -4,7 +4,6 @@
 #include <string.h>
 
 #define MASON_PRINT_IMPL
-#define MASON_USE_CJSON
 #include "../mason.h"
 
 typedef enum {
@@ -53,7 +52,7 @@ int main(void) {
 
     printf("Parsing features example...\n\n");
 
-    Report *report = Report_from_json_sized(json_str, json_len);
+    Report *report = Report_from_string_sized(json_str, json_len);
     if (!report) {
         printf("Parse failed: %s\n", mason_parse_error());
         free(json_str);
