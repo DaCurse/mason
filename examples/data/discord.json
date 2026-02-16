@@ -1,35 +1,35 @@
 {
-  "op": 2,
-  "d": {
-    "token": "Bot EXAMPLE_TOKEN",
-    "properties": {
-      "os": "linux",
-      "browser": "mason",
-      "device": "mason"
-    },
-    "presence": {
-      "since": 17000000123,
-      "status": "online",
-      "afk": false,
-      "activities": [
-        {
-          "name": "Playing Mason",
-          "type": 0,
-          "created_at": 4320456,
-          "url": null,
-          "buttons": [
-            {
-              "label": "Join",
-              "url": "https://example.com"
-            },
-            {
-              "label": "Watch",
-              "url": "https://example.com/live"
-            }
-          ]
-        }
-      ]
-    },
-    "intents": 513
-  }
+    "op": 2,
+    "d": {
+        "token": "Bot EXAMPLE_TOKEN",
+        "properties": {
+            "os": "linux",
+            "browser": "mason",
+            "device": "mason"
+        },
+        "presence": {
+            "since": 17000000123,
+            "status": "online",
+            "afk": false,
+            "activities": [
+                {
+                    "name": "Playing Mason",
+                    "type": 0,
+                    "created_at": 4320456,
+                    "url": null,
+                    "buttons": [
+                        {
+                            "label": "Join",
+                            "url": "https://example.com"
+                        },
+                        {
+                            "label": "Watch",
+                            "url": "https://example.com/live"
+                        }
+                    ]
+                }
+            ]
+        },
+        "intents": 513
+    }
 }

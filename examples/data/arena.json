@@ -1,0 +1,72 @@
+{
+    "owner": {
+        "name": "owner",
+        "id": 999,
+        "score": 88.25,
+        "active": true,
+        "tags": [
+            "one",
+            "two",
+            "three"
+        ],
+        "address": {
+            "street": "main",
+            "zip": 11111
+        },
+        "history": [
+            {
+                "street": "old-a",
+                "zip": 10001
+            },
+            {
+                "street": "old-b",
+                "zip": 10002
+            }
+        ]
+    },
+    "people": [
+        {
+            "name": "alice",
+            "id": 101,
+            "score": 11.5,
+            "active": true,
+            "tags": [
+                "alpha",
+                "beta"
+            ],
+            "address": {
+                "street": "street-1",
+                "zip": 90001
+            },
+            "history": [
+                {
+                    "street": "h1",
+                    "zip": 1
+                }
+            ]
+        },
+        {
+            "name": "bob",
+            "id": 202,
+            "score": 42.0,
+            "active": false,
+            "tags": [
+                "gamma"
+            ],
+            "address": {
+                "street": "street-2",
+                "zip": 90002
+            },
+            "history": [
+                {
+                    "street": "h2",
+                    "zip": 2
+                },
+                {
+                    "street": "h3",
+                    "zip": 3
+                }
+            ]
+        }
+    ]
+}

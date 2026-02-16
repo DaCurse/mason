@@ -8,42 +8,23 @@
 
 #include <cjson/cJSON.h>
 
-static char *_mason_strdup(const char *s) {
-    if (!s)
-        return NULL;
-    size_t len = strlen(s) + 1;
-    char *p = malloc(len);
-    if (p)
-        memcpy(p, s, len);
-    return p;
-}
+#include "mason_arena.h"
 
-/* Type Definitions */
+/* Base Types */
 
 typedef char *string;
 typedef cJSON *MASON_Parsed;
 
-/* Inline Parsing Helpers */
+extern MASON_Arena *_mason_global_arena;
 
-static inline MASON_Parsed mason_parse(const char *json_str) {
-    if (!json_str)
-        return NULL;
-    return cJSON_Parse(json_str);
-}
-
-static inline MASON_Parsed mason_parse_sized(const char *json_str, size_t len) {
-    if (!json_str)
-        return NULL;
-    return cJSON_ParseWithLength(json_str, len);
-}
-
-static inline void mason_delete(MASON_Parsed parsed) {
-    cJSON_Delete(parsed);
-}
-
-static inline const char *mason_parse_error(void) {
-    return cJSON_GetErrorPtr();
-}
+/* Runtime API */
+void mason_bind_global_arena(MASON_Arena *a);
+void mason_init_default(void);
+void mason_init(void);
+void mason_reset(void);
+void mason_shutdown(void);
+const char *mason_parse_error(void);
+void _mason_set_parse_error(const char *json_str, const char *err, bool null_input);
 
 /* Field Type Macros */
 
@@ -58,21 +39,17 @@ static inline const char *mason_parse_error(void) {
 
 /* Struct Definition */
 
-#define MASON_STRUCT_DEFINE(struct_name, FIELDS)                                                       \
-    typedef struct struct_name {                                                                       \
-        FIELDS(_MASON_FIELD, _MASON_ARRAY, _MASON_ARRAY_MULTI_RAW, _MASON_OBJECT, _MASON_ARRAY_OBJECT) \
-    } struct_name;                                                                                     \
-                                                                                                       \
-    struct_name *struct_name##_from_json(MASON_Parsed json);                                           \
-    struct_name *struct_name##_from_string(const char *json_str);                                      \
-    struct_name *struct_name##_from_string_sized(const char *json_str, size_t len);                    \
-    MASON_Parsed struct_name##_to_json(struct_name *obj);                                              \
-    void struct_name##_free(struct_name *obj);                                                         \
-    void struct_name##_free_members(struct_name *obj);                                                 \
-    void struct_name##_free_json(MASON_Parsed json);                                                   \
-    string struct_name##_to_string(MASON_Parsed json);                                                 \
-    void struct_name##_string_free(string str);                                                        \
-    void struct_name##_print(struct_name *obj);
+#define MASON_STRUCT_DEFINE(struct_name, FIELDS)                                    \
+    typedef struct struct_name {                                                    \
+        FIELDS(_MASON_FIELD, _MASON_ARRAY, _MASON_OBJECT, _MASON_ARRAY_OBJECT)      \
+    } struct_name;                                                                  \
+                                                                                    \
+    bool struct_name##_parse_into(struct_name *obj, MASON_Parsed json);             \
+    struct_name *struct_name##_from_json(MASON_Parsed json);                        \
+    struct_name *struct_name##_from_string(const char *json_str);                   \
+    struct_name *struct_name##_from_string_sized(const char *json_str, size_t len); \
+    MASON_Parsed struct_name##_to_json(struct_name *obj);                           \
+    string struct_name##_to_string(MASON_Parsed json, bool format);
 
 /* Type Resolution
  *
@@ -116,7 +93,17 @@ static inline bool mason_get_bool(MASON_Parsed item) { return cJSON_IsTrue(item)
 static inline int32_t mason_get_owned_int32(MASON_Parsed item) { return (int32_t)item->valueint; }
 static inline int64_t mason_get_owned_int64(MASON_Parsed item) { return (int64_t)item->valuedouble; }
 static inline double mason_get_owned_double(MASON_Parsed item) { return item->valuedouble; }
-static inline char *mason_get_owned_string(MASON_Parsed item) { return _mason_strdup(item->valuestring); }
+static inline char *mason_get_owned_string(MASON_Parsed item) {
+    if (!item || !item->valuestring) {
+        return NULL;
+    }
+    size_t len = strlen(item->valuestring) + 1;
+    char *p = (char *)mason_arena_alloc(_mason_global_arena, len);
+    if (p) {
+        memcpy(p, item->valuestring, len);
+    }
+    return p;
+}
 static inline bool mason_get_owned_bool(MASON_Parsed item) { return cJSON_IsTrue(item); }
 
 /* JSON node creators */
@@ -125,40 +112,6 @@ static inline MASON_Parsed mason_create_int64(int64_t v) { return cJSON_CreateNu
 static inline MASON_Parsed mason_create_double(double v) { return cJSON_CreateNumber(v); }
 static inline MASON_Parsed mason_create_string(const char *v) { return v ? cJSON_CreateString(v) : cJSON_CreateNull(); }
 static inline MASON_Parsed mason_create_bool(bool v) { return cJSON_CreateBool(v); }
-
-/* Field memory free
- * NOTE: noop for non-owning primitives
- */
-static inline void mason_free_int32(int32_t v) { (void)v; }
-static inline void mason_free_int64(int64_t v) { (void)v; }
-static inline void mason_free_double(double v) { (void)v; }
-static inline void mason_free_string(char *s) { free(s); }
-static inline void mason_free_bool(bool v) { (void)v; }
-
-/* Array memory free */
-static inline void mason_free_array_int32(int32_t *arr, size_t count) {
-    (void)count;
-    free(arr);
-}
-static inline void mason_free_array_int64(int64_t *arr, size_t count) {
-    (void)count;
-    free(arr);
-}
-static inline void mason_free_array_double(double *arr, size_t count) {
-    (void)count;
-    free(arr);
-}
-static inline void mason_free_array_bool(bool *arr, size_t count) {
-    (void)count;
-    free(arr);
-}
-static inline void mason_free_array_string(char **arr, size_t count) {
-    if (arr) {
-        for (size_t i = 0; i < count; i++)
-            free(arr[i]);
-        free(arr);
-    }
-}
 
 /* _Generic Dispatch Macros */
 
@@ -191,68 +144,79 @@ static inline void mason_free_array_string(char **arr, size_t count) {
     const char *: mason_create_string,        \
     _Bool: mason_create_bool)(value)
 
-#define mason_free_field(value) _Generic((value), \
-    int32_t: mason_free_int32,                    \
-    int64_t: mason_free_int64,                    \
-    double: mason_free_double,                    \
-    char *: mason_free_string,                    \
-    _Bool: mason_free_bool)(value)
-
-#define mason_free_array(arr, count) _Generic((arr), \
-    int32_t *: mason_free_array_int32,               \
-    int64_t *: mason_free_array_int64,               \
-    double *: mason_free_array_double,               \
-    char **: mason_free_array_string,                \
-    _Bool *: mason_free_array_bool)(arr, count)
-
-/* Parsing Implementation */
+/*
+ * Parsing Implementation
+ * Arguments that come from the functions these macros are expanded in:
+ * `json` - the JSON object being parsed
+ * `obj`  - the struct being parsed into
+ * `item` - temporary cJSON handle for the field being parsed
+ */
 
 #define _MASON_PARSE_FIELD(type, name)                            \
     item = cJSON_GetObjectItemCaseSensitive(json, #name);         \
-    if (mason_is(item, MASON_TYPE_HINT(type))) {                  \
+    if (item && mason_is(item, MASON_TYPE_HINT(type))) {          \
         obj->name = mason_get_owned(item, MASON_TYPE_HINT(type)); \
     }
 
-#define _MASON_PARSE_ARRAY_PRIM(type, name)                                      \
-    item = cJSON_GetObjectItemCaseSensitive(json, #name);                        \
-    if (cJSON_IsArray(item)) {                                                   \
-        obj->name##_count = (size_t)cJSON_GetArraySize(item);                    \
-        obj->name = (type *)calloc(obj->name##_count, sizeof(type));             \
-        if (obj->name) {                                                         \
-            for (size_t i = 0; i < obj->name##_count; i++) {                     \
-                MASON_Parsed elem = cJSON_GetArrayItem(item, (int)i);            \
-                if (mason_is(elem, MASON_TYPE_HINT(type))) {                     \
-                    obj->name[i] = mason_get_owned(elem, MASON_TYPE_HINT(type)); \
-                }                                                                \
-            }                                                                    \
-        } else {                                                                 \
-            obj->name##_count = 0;                                               \
-        }                                                                        \
+#define _MASON_PARSE_ARRAY_PRIM(type, name)                                                               \
+    item = cJSON_GetObjectItemCaseSensitive(json, #name);                                                 \
+    if (cJSON_IsArray(item)) {                                                                            \
+        obj->name##_count = (size_t)cJSON_GetArraySize(item);                                             \
+        if (obj->name##_count == 0) {                                                                     \
+            obj->name = NULL;                                                                             \
+        } else {                                                                                          \
+            obj->name = (type *)mason_arena_calloc(_mason_global_arena, obj->name##_count, sizeof(type)); \
+            if (!obj->name) {                                                                             \
+                obj->name##_count = 0;                                                                    \
+                return false;                                                                             \
+            }                                                                                             \
+            for (size_t i = 0; i < obj->name##_count; i++) {                                              \
+                MASON_Parsed elem = cJSON_GetArrayItem(item, (int)i);                                     \
+                if (mason_is(elem, MASON_TYPE_HINT(type))) {                                              \
+                    obj->name[i] = mason_get_owned(elem, MASON_TYPE_HINT(type));                          \
+                }                                                                                         \
+            }                                                                                             \
+        }                                                                                                 \
     }
 
-#define _MASON_PARSE_OBJECT(type, name)                   \
-    item = cJSON_GetObjectItemCaseSensitive(json, #name); \
-    if (cJSON_IsObject(item)) {                           \
-        obj->name = type##_from_json(item);               \
+#define _MASON_PARSE_OBJECT(type, name)                                               \
+    item = cJSON_GetObjectItemCaseSensitive(json, #name);                             \
+    if (cJSON_IsObject(item)) {                                                       \
+        MASON_ArenaMark mark = mason_arena_mark(_mason_global_arena);                 \
+        obj->name = (type *)mason_arena_calloc(_mason_global_arena, 1, sizeof(type)); \
+        if (!obj->name) {                                                             \
+            return false;                                                             \
+        }                                                                             \
+        if (!type##_parse_into(obj->name, item)) {                                    \
+            mason_arena_rewind(_mason_global_arena, mark);                            \
+            obj->name = NULL;                                                         \
+            return false;                                                             \
+        }                                                                             \
     }
 
-#define _MASON_PARSE_ARRAY_OBJECT(type, name)                         \
-    item = cJSON_GetObjectItemCaseSensitive(json, #name);             \
-    if (cJSON_IsArray(item)) {                                        \
-        obj->name##_count = (size_t)cJSON_GetArraySize(item);         \
-        obj->name = (type *)calloc(obj->name##_count, sizeof(type));  \
-        if (obj->name) {                                              \
-            for (size_t i = 0; i < obj->name##_count; i++) {          \
-                MASON_Parsed elem = cJSON_GetArrayItem(item, (int)i); \
-                type *parsed = type##_from_json(elem);                \
-                if (parsed) {                                         \
-                    obj->name[i] = *parsed;                           \
-                    free(parsed);                                     \
-                }                                                     \
-            }                                                         \
-        } else {                                                      \
-            obj->name##_count = 0;                                    \
-        }                                                             \
+#define _MASON_PARSE_ARRAY_OBJECT(type, name)                                                             \
+    item = cJSON_GetObjectItemCaseSensitive(json, #name);                                                 \
+    if (cJSON_IsArray(item)) {                                                                            \
+        obj->name##_count = (size_t)cJSON_GetArraySize(item);                                             \
+        if (obj->name##_count == 0) {                                                                     \
+            obj->name = NULL;                                                                             \
+        } else {                                                                                          \
+            MASON_ArenaMark mark = mason_arena_mark(_mason_global_arena);                                 \
+            obj->name = (type *)mason_arena_calloc(_mason_global_arena, obj->name##_count, sizeof(type)); \
+            if (!obj->name) {                                                                             \
+                obj->name##_count = 0;                                                                    \
+                return false;                                                                             \
+            }                                                                                             \
+            for (size_t i = 0; i < obj->name##_count; i++) {                                              \
+                MASON_Parsed elem = cJSON_GetArrayItem(item, (int)i);                                     \
+                if (!type##_parse_into(&obj->name[i], elem)) {                                            \
+                    mason_arena_rewind(_mason_global_arena, mark);                                        \
+                    obj->name = NULL;                                                                     \
+                    obj->name##_count = 0;                                                                \
+                    return false;                                                                         \
+                }                                                                                         \
+            }                                                                                             \
+        }                                                                                                 \
     }
 
 /* Serialization Implementation */
@@ -290,127 +254,106 @@ static inline void mason_free_array_string(char **arr, size_t count) {
         cJSON_AddItemToObject(json, #name, arr);                 \
     }
 
-/* Memory Management */
-
-#define _MASON_FREE_FIELD_DISPATCH(type, name) mason_free_field((_MASON_TYPE_ALIAS(type))obj->name);
-#define _MASON_FREE_ARRAY_DISPATCH(type, name) mason_free_array((_MASON_TYPE_ALIAS(type) *)obj->name, obj->name##_count);
-
-#define _MASON_FREE_OBJECT(type, name) \
-    if (obj->name) {                   \
-        type##_free(obj->name);        \
-    }
-
-#define _MASON_FREE_ARRAY_OBJECT(type, name)             \
-    if (obj->name) {                                     \
-        for (size_t i = 0; i < obj->name##_count; i++) { \
-            type##_free_members(&obj->name[i]);          \
-        }                                                \
-        free(obj->name);                                 \
-    }
-
 /* X-Macro Expansion Helpers */
-
-#define _MASON_EXPAND_STRUCT_FIELD(type, name)           _MASON_FIELD(type, name)
-#define _MASON_EXPAND_STRUCT_ARRAY(type, name)           _MASON_ARRAY(type, name)
-#define _MASON_EXPAND_STRUCT_ARRAY_MULTI(name)           _MASON_ARRAY_MULTI_RAW(name)
-#define _MASON_EXPAND_STRUCT_OBJECT(type, name)          _MASON_OBJECT(type, name)
-#define _MASON_EXPAND_STRUCT_ARRAY_OBJECT(type, name)    _MASON_ARRAY_OBJECT(type, name)
 
 #define _MASON_EXPAND_PARSE_FIELD(type, name)            _MASON_PARSE_FIELD(type, name)
 #define _MASON_EXPAND_PARSE_ARRAY(type, name)            _MASON_PARSE_ARRAY_PRIM(type, name)
-#define _MASON_EXPAND_PARSE_ARRAY_MULTI(name)            _MASON_PARSE_ARRAY_MULTI(name)
 #define _MASON_EXPAND_PARSE_OBJECT(type, name)           _MASON_PARSE_OBJECT(type, name)
 #define _MASON_EXPAND_PARSE_ARRAY_OBJECT(type, name)     _MASON_PARSE_ARRAY_OBJECT(type, name)
 
 #define _MASON_EXPAND_SERIALIZE_FIELD(type, name)        _MASON_SERIALIZE_FIELD(type, name)
 #define _MASON_EXPAND_SERIALIZE_ARRAY(type, name)        _MASON_SERIALIZE_ARRAY_PRIM(type, name)
-#define _MASON_EXPAND_SERIALIZE_ARRAY_MULTI(name)        _MASON_SERIALIZE_ARRAY_MULTI(name)
 #define _MASON_EXPAND_SERIALIZE_OBJECT(type, name)       _MASON_SERIALIZE_OBJECT(type, name)
 #define _MASON_EXPAND_SERIALIZE_ARRAY_OBJECT(type, name) _MASON_SERIALIZE_ARRAY_OBJECT(type, name)
 
-#define _MASON_EXPAND_FREE_FIELD(type, name)             _MASON_FREE_FIELD_DISPATCH(type, name)
-#define _MASON_EXPAND_FREE_ARRAY(type, name)             _MASON_FREE_ARRAY_DISPATCH(type, name)
-#define _MASON_EXPAND_FREE_ARRAY_MULTI(name)             _MASON_FREE_ARRAY_MULTI(name)
-#define _MASON_EXPAND_FREE_OBJECT(type, name)            _MASON_FREE_OBJECT(type, name)
-#define _MASON_EXPAND_FREE_ARRAY_OBJECT(type, name)      _MASON_FREE_ARRAY_OBJECT(type, name)
-
-/* Multi array support */
-#include "mason_multi.h"
-
-/* Print support */
-#include "mason_print.h"
-
 /* Main Implementation Macros */
 
-#define _MASON_IMPL_BASE(struct_name, FIELDS)                                                                     \
-    struct_name *struct_name##_from_json(MASON_Parsed json) {                                                     \
-        if (!json)                                                                                                \
-            return NULL;                                                                                          \
-        struct_name *obj = (struct_name *)calloc(1, sizeof(struct_name));                                         \
-        if (!obj)                                                                                                 \
-            return NULL;                                                                                          \
-        MASON_Parsed item = NULL;                                                                                 \
-        FIELDS(_MASON_EXPAND_PARSE_FIELD, _MASON_EXPAND_PARSE_ARRAY, _MASON_EXPAND_PARSE_ARRAY_MULTI,             \
-               _MASON_EXPAND_PARSE_OBJECT, _MASON_EXPAND_PARSE_ARRAY_OBJECT)                                      \
-        return obj;                                                                                               \
-    }                                                                                                             \
-                                                                                                                  \
-    struct_name *struct_name##_from_string(const char *json_str) {                                                \
-        MASON_Parsed parsed = mason_parse(json_str);                                                              \
-        if (!parsed)                                                                                              \
-            return NULL;                                                                                          \
-        struct_name *obj = struct_name##_from_json(parsed);                                                       \
-        mason_delete(parsed);                                                                                     \
-        return obj;                                                                                               \
-    }                                                                                                             \
-                                                                                                                  \
-    struct_name *struct_name##_from_string_sized(const char *json_str, size_t len) {                              \
-        MASON_Parsed parsed = mason_parse_sized(json_str, len);                                                   \
-        if (!parsed)                                                                                              \
-            return NULL;                                                                                          \
-        struct_name *obj = struct_name##_from_json(parsed);                                                       \
-        mason_delete(parsed);                                                                                     \
-        return obj;                                                                                               \
-    }                                                                                                             \
-                                                                                                                  \
-    MASON_Parsed struct_name##_to_json(struct_name *obj) {                                                        \
-        if (!obj)                                                                                                 \
-            return NULL;                                                                                          \
-        MASON_Parsed json = cJSON_CreateObject();                                                                 \
-        if (!json)                                                                                                \
-            return NULL;                                                                                          \
-        FIELDS(_MASON_EXPAND_SERIALIZE_FIELD, _MASON_EXPAND_SERIALIZE_ARRAY, _MASON_EXPAND_SERIALIZE_ARRAY_MULTI, \
-               _MASON_EXPAND_SERIALIZE_OBJECT, _MASON_EXPAND_SERIALIZE_ARRAY_OBJECT)                              \
-        return json;                                                                                              \
-    }                                                                                                             \
-                                                                                                                  \
-    void struct_name##_free_members(struct_name *obj) {                                                           \
-        if (!obj)                                                                                                 \
-            return;                                                                                               \
-        FIELDS(_MASON_EXPAND_FREE_FIELD, _MASON_EXPAND_FREE_ARRAY, _MASON_EXPAND_FREE_ARRAY_MULTI,                \
-               _MASON_EXPAND_FREE_OBJECT, _MASON_EXPAND_FREE_ARRAY_OBJECT)                                        \
-    }                                                                                                             \
-                                                                                                                  \
-    void struct_name##_free(struct_name *obj) {                                                                   \
-        if (!obj)                                                                                                 \
-            return;                                                                                               \
-        struct_name##_free_members(obj);                                                                          \
-        free(obj);                                                                                                \
-    }                                                                                                             \
-                                                                                                                  \
-    string struct_name##_to_string(MASON_Parsed json) {                                                           \
-        if (!json)                                                                                                \
-            return NULL;                                                                                          \
-        return cJSON_Print(json);                                                                                 \
-    }                                                                                                             \
-                                                                                                                  \
-    void struct_name##_string_free(string str) {                                                                  \
-        if (str)                                                                                                  \
-            free(str);                                                                                            \
+#define _MASON_IMPL_BASE(struct_name, FIELDS)                                               \
+    bool struct_name##_parse_into(struct_name *obj, MASON_Parsed json) {                    \
+        if (!obj || !json || !cJSON_IsObject(json)) {                                       \
+            return false;                                                                   \
+        }                                                                                   \
+        MASON_Parsed item = NULL;                                                           \
+        FIELDS(_MASON_EXPAND_PARSE_FIELD,                                                   \
+               _MASON_EXPAND_PARSE_ARRAY,                                                   \
+               _MASON_EXPAND_PARSE_OBJECT,                                                  \
+               _MASON_EXPAND_PARSE_ARRAY_OBJECT)                                            \
+        return true;                                                                        \
+    }                                                                                       \
+                                                                                            \
+    struct_name *struct_name##_from_json(MASON_Parsed json) {                               \
+        if (!json) {                                                                        \
+            return NULL;                                                                    \
+        }                                                                                   \
+        MASON_ArenaMark mark = mason_arena_mark(_mason_global_arena);                       \
+        struct_name *obj = mason_arena_calloc(_mason_global_arena, 1, sizeof(struct_name)); \
+        if (!obj) {                                                                         \
+            return NULL;                                                                    \
+        }                                                                                   \
+        if (!struct_name##_parse_into(obj, json)) {                                         \
+            mason_arena_rewind(_mason_global_arena, mark);                                  \
+            return NULL;                                                                    \
+        }                                                                                   \
+        return obj;                                                                         \
+    }                                                                                       \
+                                                                                            \
+    struct_name *struct_name##_from_string(const char *json_str) {                          \
+        if (!json_str) {                                                                    \
+            _mason_set_parse_error(NULL, NULL, true);                                       \
+            return NULL;                                                                    \
+        }                                                                                   \
+        const char *parse_end = NULL;                                                       \
+        MASON_Parsed parsed = cJSON_ParseWithOpts(json_str, &parse_end, 0);                 \
+        if (!parsed) {                                                                      \
+            _mason_set_parse_error(json_str, parse_end, false);                             \
+            return NULL;                                                                    \
+        }                                                                                   \
+        _mason_set_parse_error(NULL, NULL, false);                                          \
+        struct_name *obj = struct_name##_from_json(parsed);                                 \
+        return obj;                                                                         \
+    }                                                                                       \
+                                                                                            \
+    struct_name *struct_name##_from_string_sized(const char *json_str, size_t len) {        \
+        if (!json_str) {                                                                    \
+            _mason_set_parse_error(NULL, NULL, true);                                       \
+            return NULL;                                                                    \
+        }                                                                                   \
+        const char *parse_end = NULL;                                                       \
+        MASON_Parsed parsed = cJSON_ParseWithLengthOpts(json_str, len, &parse_end, 0);      \
+        if (!parsed) {                                                                      \
+            _mason_set_parse_error(json_str, parse_end, false);                             \
+            return NULL;                                                                    \
+        }                                                                                   \
+        _mason_set_parse_error(NULL, NULL, false);                                          \
+        struct_name *obj = struct_name##_from_json(parsed);                                 \
+        return obj;                                                                         \
+    }                                                                                       \
+                                                                                            \
+    MASON_Parsed struct_name##_to_json(struct_name *obj) {                                  \
+        if (!obj) {                                                                         \
+            return NULL;                                                                    \
+        }                                                                                   \
+        MASON_Parsed json = cJSON_CreateObject();                                           \
+        if (!json) {                                                                        \
+            return NULL;                                                                    \
+        }                                                                                   \
+        FIELDS(_MASON_EXPAND_SERIALIZE_FIELD, _MASON_EXPAND_SERIALIZE_ARRAY,                \
+               _MASON_EXPAND_SERIALIZE_OBJECT, _MASON_EXPAND_SERIALIZE_ARRAY_OBJECT)        \
+        return json;                                                                        \
+    }                                                                                       \
+                                                                                            \
+    string struct_name##_to_string(MASON_Parsed json, bool format) {                        \
+        if (!json) {                                                                        \
+            return NULL;                                                                    \
+        }                                                                                   \
+        if (format) {                                                                       \
+            return cJSON_Print(json);                                                       \
+        } else {                                                                            \
+            return cJSON_PrintUnformatted(json);                                            \
+        }                                                                                   \
     }
 
-#define MASON_IMPL(struct_name, FIELDS)   \
-    _MASON_IMPL_BASE(struct_name, FIELDS) \
-    _MASON_IMPL_PRINT(struct_name, FIELDS)
+#define MASON_IMPL(struct_name, FIELDS) \
+    _MASON_IMPL_BASE(struct_name, FIELDS)
 
 #endif // MASON_H
