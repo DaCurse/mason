@@ -81,7 +81,7 @@ int main(void) {
 
     GatewayEventPayload *payload = GatewayEventPayload_from_string_sized(json_str, json_len);
     if (!payload) {
-        fprintf(stderr, "Parse error: %s\n", mason_parse_error());
+        fprintf(stderr, "Error: %s\n", mason_error());
         ret = 1;
         goto cleanup;
     }
@@ -98,4 +98,3 @@ cleanup:
     mason_shutdown();
     return ret;
 }
-

@@ -1,0 +1,7 @@
+{
+    "name": "jack",
+    "age": 33,
+    "status": 0,
+    "scores": [1],
+    "prev_addresses": [{ "city": "LA", "zip": 90001 }]
+}

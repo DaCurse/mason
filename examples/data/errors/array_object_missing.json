@@ -1,0 +1,7 @@
+{
+    "name": "mary",
+    "age": 38,
+    "status": 0,
+    "scores": [1],
+    "address": { "city": "NY", "zip": 10001 }
+}

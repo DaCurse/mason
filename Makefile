@@ -36,7 +36,7 @@ clean:
 	rm -rf $(BUILD_DIR)
 
 format:
-	clang-format -i examples/*.c *.h
+	clang-format -i examples/*.c *.c *.h
 
 san: CFLAGS += -fsanitize=address,undefined -fno-omit-frame-pointer
 san: LDFLAGS += -fsanitize=address,undefined

@@ -1,0 +1,8 @@
+{
+    "name": "alice",
+    "age": 30,
+    "status": 0,
+    "scores": [100, 95],
+    "address": { "city": "NY", "zip": 10001 },
+    "prev_addresses": [{ "city": "LA", "zip": 90001 }]
+}

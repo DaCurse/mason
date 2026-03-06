@@ -41,7 +41,7 @@ int main(void) {
     MASON_ArenaMark mark = mason_arena_mark(arena);
     User *u = User_from_string("{\"name\":\"Alice\",\"age\":30,\"tags\":[\"admin\"]}");
     if (!u) {
-        printf("Parse error: %s\n", mason_parse_error());
+        printf("Error: %s\n", mason_error());
         mason_shutdown();
         return 1;
     }
@@ -64,7 +64,7 @@ int main(void) {
 
 ### What it doesn't do yet
 
-- Fields aren't required, if they are missing, their value in the struct is zeroed out.
+- No support for optional/nullable fields, all fields are required.
 - No support for default values.
 - No support for arrays of mixed types.
 - No thread safety.
@@ -73,22 +73,23 @@ int main(void) {
 
 For a struct named `Foo`, `MASON_STRUCT_DEFINE` + `MASON_IMPL` generates:
 
-| Function | Description |
-| --- | --- |
-| `Foo_from_string(const char *str)` | Parse a JSON string into an arena-backed `Foo *` |
-| `Foo_from_string_sized(const char *str, size_t len)` | Same, but with explicit length |
-| `Foo_from_json(MASON_Parsed json)` | Parse from an already-parsed JSON handle |
-| `Foo_to_json(Foo *obj)` | Serialize to a `MASON_Parsed` handle |
-| `Foo_to_string(MASON_Parsed json)` | Convert a JSON handle to a null-terminated `char *` (arena-backed) |
+| Function                                             | Description                                                                                                                                      |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Foo_from_string(const char *str)`                   | Parse a JSON string into an arena-backed `Foo *`                                                                                                 |
+| `Foo_from_string_sized(const char *str, size_t len)` | Same, but with explicit length                                                                                                                   |
+| `Foo_from_json(MASON_Parsed json)`                   | Parse from an already-parsed JSON handle                                                                                                         |
+| `Foo_parse_into(Foo *obj, MASON_Parsed json)`        | Parse into an existing struct, returns `false` on failure. Caller must reset `_mason_path_len = 0` if calling directly (not via `Foo_from_json`) |
+| `Foo_to_json(Foo *obj)`                              | Serialize to a `MASON_Parsed` handle                                                                                                             |
+| `Foo_to_string(MASON_Parsed json)`                   | Convert a JSON handle to a null-terminated `char *` (arena-backed)                                                                               |
 
 ### Supported field types
 
-| Macro | C type | Notes |
-| --- | --- | --- |
-| `FIELD(type, name)` | Any primitive | `int32_t`, `int64_t`, `double`, `string`, `bool` |
-| `ARRAY(type, name)` | Typed array | Generates `type *name` + `size_t name_count` |
-| `OBJECT(type, name)` | Nested struct | Pointer to another Mason struct |
-| `ARRAY_OBJECT(type, name)` | Array of structs | Inline array (not pointer-to-pointer) |
+| Macro                      | C type           | Notes                                            |
+| -------------------------- | ---------------- | ------------------------------------------------ |
+| `FIELD(type, name)`        | Any primitive    | `int32_t`, `int64_t`, `double`, `string`, `bool` |
+| `ARRAY(type, name)`        | Typed array      | Generates `type *name` + `size_t name_count`     |
+| `OBJECT(type, name)`       | Nested struct    | Pointer to another Mason struct                  |
+| `ARRAY_OBJECT(type, name)` | Array of structs | Inline array (not pointer-to-pointer)            |
 
 ### Type aliases
 
@@ -103,26 +104,44 @@ Now you can use `FIELD(Role, role)` in your field list and Mason will parse/seri
 
 ### Mason API
 
-| Function | Description |
-| --- | --- |
-| `mason_bind_global_arena(MASON_Arena *a)` | Use a caller-provided arena for all allocations |
-| `mason_init(void)` | Initialize cJSON hooks for arena-backed allocations. Should only be called once after a global arena was bound and before any Mason generated functions are used |
-| `mason_init_default(void)` | Create and bind a default global arena, then initialize cJSON hooks |
-| `mason_reset(void)` | Reset the global arena to reclaim all allocations |
-| `mason_shutdown(void)` | Destroy (free) the global arena and unhook cJSON |
-| `mason_parse_error(void)` | Get the last parse error message |
+| Function                                  | Description                                                                                                                                                      |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mason_bind_global_arena(MASON_Arena *a)` | Use a caller-provided arena for all allocations                                                                                                                  |
+| `mason_init(void)`                        | Initialize cJSON hooks for arena-backed allocations. Should only be called once after a global arena was bound and before any Mason generated functions are used |
+| `mason_init_default(void)`                | Create and bind a default global arena, then initialize cJSON hooks                                                                                              |
+| `mason_reset(void)`                       | Reset the global arena to reclaim all allocations                                                                                                                |
+| `mason_shutdown(void)`                    | Destroy (free) the global arena and unhook cJSON                                                                                                                 |
+| `mason_error(void)`                       | Get the last parse or validation error message                                                                                                                   |
+
+### Error messages
+
+`mason_error()` returns a human-readable string for both parse and validation failures.
+
+**Parse errors** include a line/column and a short context snippet:
+
+```
+JSON parse error at line 1, col 17: me": "bob",}
+```
+
+**Validation errors** include the root struct name, the full field path, the expected type, and the actual type:
+
+```
+JSON validation error (User): field "prev_addresses[0].zip" expected int32_t, got bool
+```
+
+For aliased types (e.g. `#define MASON_TYPE_ALIAS_Role int32_t`) the message shows both names: `expected Role (int32_t)`.
 
 ### Arena API
 
 This is what Mason uses internally. You can create and bind your own arena and use these helpers directly for finer-grained control, mainly to take advantage of marks and rewinding.
 
-| Function | Description |
-| --- | --- |
-| `mason_arena_create(size_t initial_capacity)` | Create a new arena with an initial block size |
-| `mason_arena_alloc(MASON_Arena *arena, size_t size)` | Allocate `size` bytes from the arena |
-| `mason_arena_calloc(MASON_Arena *arena, size_t count, size_t size)` | Allocate and zero `count * size` bytes |
-| `mason_arena_mark(MASON_Arena *arena)` | Capture a rewind point for the arena |
-| `mason_arena_rewind(MASON_Arena *arena, MASON_ArenaMark mark)` | Rewind allocations back to a mark |
-| `mason_arena_reset(MASON_Arena *arena)` | Reset all allocations in the arena |
-| `mason_arena_stats(const MASON_Arena *arena)` | Get total usage and capacity info for the arena |
-| `mason_arena_destroy(MASON_Arena *arena)` | Free all blocks and destroy the arena |
+| Function                                                            | Description                                     |
+| ------------------------------------------------------------------- | ----------------------------------------------- |
+| `mason_arena_create(size_t initial_capacity)`                       | Create a new arena with an initial block size   |
+| `mason_arena_alloc(MASON_Arena *arena, size_t size)`                | Allocate `size` bytes from the arena            |
+| `mason_arena_calloc(MASON_Arena *arena, size_t count, size_t size)` | Allocate and zero `count * size` bytes          |
+| `mason_arena_mark(MASON_Arena *arena)`                              | Capture a rewind point for the arena            |
+| `mason_arena_rewind(MASON_Arena *arena, MASON_ArenaMark mark)`      | Rewind allocations back to a mark               |
+| `mason_arena_reset(MASON_Arena *arena)`                             | Reset all allocations in the arena              |
+| `mason_arena_stats(const MASON_Arena *arena)`                       | Get total usage and capacity info for the arena |
+| `mason_arena_destroy(MASON_Arena *arena)`                           | Free all blocks and destroy the arena           |

@@ -1,0 +1,8 @@
+{
+    "name": "iris",
+    "age": 28,
+    "status": 0,
+    "scores": [1],
+    "address": "123 main st",
+    "prev_addresses": [{ "city": "LA", "zip": 90001 }]
+}

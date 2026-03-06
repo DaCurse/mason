@@ -7,11 +7,11 @@ KeepEmptyLinesAtEOF: true
 AlignConsecutiveBitFields: true
 
 AlignConsecutiveMacros:
-  Enabled: true
-  AcrossEmptyLines: true
-  AcrossComments: true
-  AlignCompound: true  
-  PadOperators: true  
+    Enabled: true
+    AcrossEmptyLines: true
+    AcrossComments: true
+    AlignCompound: true
+    PadOperators: true
 AlignEscapedNewlines: Left
 
 ColumnLimit: 0

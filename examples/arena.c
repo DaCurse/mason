@@ -96,7 +96,7 @@ int main(void) {
 
         report = Report_from_string_sized(json_str, json_len);
         if (!report) {
-            fprintf(stderr, "parse failed at iter %d: %s\n", i, mason_parse_error());
+            fprintf(stderr, "mason failed at iter %d: %s\n", i, mason_error());
             goto cleanup;
         }
 
