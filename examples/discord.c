@@ -15,38 +15,38 @@ typedef enum {
 
 // https://discord.com/developers/docs/events/gateway-events#identify-identify-structure
 #define IdentifyProperties_FIELDS(FIELD, ARRAY, OBJECT, ARRAY_OBJECT) \
-    FIELD(string, os)                                                 \
-    FIELD(string, browser)                                            \
-    FIELD(string, device)
+    FIELD(string, os, REQUIRED)                                       \
+    FIELD(string, browser, REQUIRED)                                  \
+    FIELD(string, device, REQUIRED)
 
 // https://discord.com/developers/docs/topics/gateway-events#activity-object
 #define IdentifyActivityButton_FIELDS(FIELD, ARRAY, OBJECT, ARRAY_OBJECT) \
-    FIELD(string, label)                                                  \
-    FIELD(string, url)
+    FIELD(string, label, REQUIRED)                                        \
+    FIELD(string, url, REQUIRED)
 
 #define IdentifyActivity_FIELDS(FIELD, ARRAY, OBJECT, ARRAY_OBJECT) \
-    FIELD(string, name)                                             \
-    FIELD(int32_t, type)                                            \
-    FIELD(int64_t, created_at)                                      \
-    FIELD(string, url)                                              \
+    FIELD(string, name, REQUIRED)                                   \
+    FIELD(int32_t, type, REQUIRED)                                  \
+    FIELD(int64_t, created_at, REQUIRED)                            \
+    FIELD(string, url, REQUIRED)                                    \
     ARRAY_OBJECT(IdentifyActivityButton, buttons)
 
 // https://discord.com/developers/docs/events/gateway-events#presence-update
 #define IdentifyPresence_FIELDS(FIELD, ARRAY, OBJECT, ARRAY_OBJECT) \
-    FIELD(int64_t, since)                                           \
-    FIELD(string, status)                                           \
-    FIELD(bool, afk)                                                \
+    FIELD(int64_t, since, REQUIRED)                                 \
+    FIELD(string, status, REQUIRED)                                 \
+    FIELD(bool, afk, REQUIRED)                                      \
     ARRAY_OBJECT(IdentifyActivity, activities)
 
 #define IdentifyEvent_FIELDS(FIELD, ARRAY, OBJECT, ARRAY_OBJECT) \
-    FIELD(string, token)                                         \
+    FIELD(string, token, REQUIRED)                               \
     OBJECT(IdentifyProperties, properties)                       \
     OBJECT(IdentifyPresence, presence)                           \
-    FIELD(int32_t, intents)
+    FIELD(int32_t, intents, REQUIRED)
 
 // https://discord.com/developers/docs/events/gateway-events#payload-structure
 #define GatewayEventPayload_FIELDS(FIELD, ARRAY, OBJECT, ARRAY_OBJECT) \
-    FIELD(GatewayOpcodeSend, op)                                       \
+    FIELD(GatewayOpcodeSend, op, REQUIRED)                             \
     OBJECT(IdentifyEventData, d)
 
 MASON_STRUCT_DEFINE(IdentifyProperties, IdentifyProperties_FIELDS)

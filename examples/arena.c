@@ -9,14 +9,14 @@
 #define RESET_EVERY (25)
 
 #define Address_FIELDS(FIELD, ARRAY, OBJECT, ARRAY_OBJECT) \
-    FIELD(string, street)                                  \
-    FIELD(int32_t, zip)
+    FIELD(string, street, NULLABLE)                        \
+    FIELD(int32_t, zip, REQUIRED)
 
 #define Person_FIELDS(FIELD, ARRAY, OBJECT, ARRAY_OBJECT) \
-    FIELD(string, name)                                   \
-    FIELD(int64_t, id)                                    \
-    FIELD(double, score)                                  \
-    FIELD(bool, active)                                   \
+    FIELD(string, name, REQUIRED)                         \
+    FIELD(int64_t, id, REQUIRED)                          \
+    FIELD(double, score, REQUIRED)                        \
+    FIELD(bool, active, REQUIRED)                         \
     ARRAY(string, tags)                                   \
     OBJECT(Address, address)                              \
     ARRAY_OBJECT(Address, history)

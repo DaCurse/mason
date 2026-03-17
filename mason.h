@@ -34,13 +34,41 @@ size_t _mason_path_push(const char *name);
 size_t _mason_path_push_index(const char *name, size_t index);
 void _mason_path_pop(size_t saved);
 
+typedef enum {
+    MASON_MISSING,
+    MASON_NULL,
+    MASON_VALUE,
+} MASON_FieldState;
+
+#define _MASON_OPTIONAL_TYPE(type) \
+    struct {                       \
+        type value;                \
+        MASON_FieldState state;    \
+    }
+
+typedef _MASON_OPTIONAL_TYPE(int32_t) MASON_Optional_int32_t;
+typedef _MASON_OPTIONAL_TYPE(int64_t) MASON_Optional_int64_t;
+typedef _MASON_OPTIONAL_TYPE(double) MASON_Optional_double;
+typedef _MASON_OPTIONAL_TYPE(string) MASON_Optional_string;
+typedef _MASON_OPTIONAL_TYPE(bool) MASON_Optional_bool;
+
+#define mason_opt_value(v)                {.value = v, .state = MASON_VALUE}
+#define mason_opt_null()                  {.state = MASON_NULL}
+#define mason_opt_missing()               {.state = MASON_MISSING}
+
 /* Field Type Macros */
 
-#define _MASON_FIELD(type, name) type name;
+#define _MASON_FIELD_REQUIRED(type, name) type name;
+#define _MASON_FIELD_OPTIONAL(type, name) MASON_Optional_##type name;
+#define _MASON_FIELD_NULLABLE(type, name) MASON_Optional_##type name;
+#define _MASON_FIELD(type, name, qual)    _MASON_CONCAT(_MASON_FIELD_, qual)(type, name)
+
 #define _MASON_ARRAY(type, name) \
     type *name;                  \
     size_t name##_count;
+
 #define _MASON_OBJECT(type, name) struct type *name;
+
 #define _MASON_ARRAY_OBJECT(type, name) \
     type *name;                         \
     size_t name##_count;
@@ -51,6 +79,8 @@ void _mason_path_pop(size_t saved);
     typedef struct struct_name {                                                    \
         FIELDS(_MASON_FIELD, _MASON_ARRAY, _MASON_OBJECT, _MASON_ARRAY_OBJECT)      \
     } struct_name;                                                                  \
+                                                                                    \
+    typedef _MASON_OPTIONAL_TYPE(struct_name) MASON_Optional_##struct_name;         \
                                                                                     \
     bool struct_name##_parse_into(struct_name *obj, MASON_Parsed json);             \
     struct_name *struct_name##_from_json(MASON_Parsed json);                        \
@@ -163,13 +193,34 @@ static inline MASON_Parsed mason_create_bool(bool v) { return cJSON_CreateBool(v
  * `item` - temporary cJSON handle for the field being parsed
  */
 
-#define _MASON_PARSE_FIELD(type, name)                                          \
+#define _MASON_PARSE_FIELD_REQUIRED(type, name)                                 \
     item = cJSON_GetObjectItemCaseSensitive(json, #name);                       \
     if (item && mason_is(item, MASON_TYPE_HINT(type))) {                        \
         obj->name = mason_get_owned(item, MASON_TYPE_HINT(type));               \
     } else {                                                                    \
         _mason_set_validation_error(#name, #type, MASON_TYPE_NAME(type), item); \
         return false;                                                           \
+    }
+#define _MASON_PARSE_FIELD_NULLABLE(type, name)                                                       \
+    item = cJSON_GetObjectItemCaseSensitive(json, #name);                                             \
+    if (item && mason_is(item, MASON_TYPE_HINT(type))) {                                              \
+        obj->name.value = mason_get_owned(item, MASON_TYPE_HINT(type));                               \
+        obj->name.state = MASON_VALUE;                                                                \
+    } else if (item && cJSON_IsNull(item)) {                                                          \
+        obj->name.state = MASON_NULL;                                                                 \
+    } else {                                                                                          \
+        _mason_set_validation_error(#name, #type " or null", MASON_TYPE_NAME(type) " or null", item); \
+        return false;                                                                                 \
+    }
+#define _MASON_PARSE_FIELD_OPTIONAL(type, name)                         \
+    item = cJSON_GetObjectItemCaseSensitive(json, #name);               \
+    if (item && mason_is(item, MASON_TYPE_HINT(type))) {                \
+        obj->name.value = mason_get_owned(item, MASON_TYPE_HINT(type)); \
+        obj->name.state = MASON_VALUE;                                  \
+    } else if (item && cJSON_IsNull(item)) {                            \
+        obj->name.state = MASON_NULL;                                   \
+    } else {                                                            \
+        obj->name.state = MASON_MISSING;                                \
     }
 
 #define _MASON_PARSE_ARRAY_PRIM(type, name)                                                               \
@@ -261,8 +312,29 @@ static inline MASON_Parsed mason_create_bool(bool v) { return cJSON_CreateBool(v
 
 /* Serialization Implementation */
 
-#define _MASON_SERIALIZE_FIELD(type, name) \
+#define _MASON_SERIALIZE_FIELD_REQUIRED(type, name) \
     cJSON_AddItemToObject(json, #name, mason_create((_MASON_TYPE_ALIAS(type))obj->name));
+#define _MASON_SERIALIZE_FIELD_NULLABLE(type, name)                                                 \
+    switch (obj->name.state) {                                                                      \
+    case MASON_VALUE:                                                                               \
+        cJSON_AddItemToObject(json, #name, mason_create((_MASON_TYPE_ALIAS(type))obj->name.value)); \
+        break;                                                                                      \
+    case MASON_NULL:                                                                                \
+    case MASON_MISSING:                                                                             \
+        cJSON_AddItemToObject(json, #name, cJSON_CreateNull());                                     \
+        break;                                                                                      \
+    }
+#define _MASON_SERIALIZE_FIELD_OPTIONAL(type, name)                                                 \
+    switch (obj->name.state) {                                                                      \
+    case MASON_VALUE:                                                                               \
+        cJSON_AddItemToObject(json, #name, mason_create((_MASON_TYPE_ALIAS(type))obj->name.value)); \
+        break;                                                                                      \
+    case MASON_NULL:                                                                                \
+        cJSON_AddItemToObject(json, #name, cJSON_CreateNull());                                     \
+        break;                                                                                      \
+    case MASON_MISSING:                                                                             \
+        break;                                                                                      \
+    }
 
 #define _MASON_SERIALIZE_ARRAY_PRIM(type, name)                                        \
     {                                                                                  \
@@ -296,12 +368,12 @@ static inline MASON_Parsed mason_create_bool(bool v) { return cJSON_CreateBool(v
 
 /* X-Macro Expansion Helpers */
 
-#define _MASON_EXPAND_PARSE_FIELD(type, name)            _MASON_PARSE_FIELD(type, name)
+#define _MASON_EXPAND_PARSE_FIELD(type, name, qual)      _MASON_CONCAT(_MASON_PARSE_FIELD_, qual)(type, name)
 #define _MASON_EXPAND_PARSE_ARRAY(type, name)            _MASON_PARSE_ARRAY_PRIM(type, name)
 #define _MASON_EXPAND_PARSE_OBJECT(type, name)           _MASON_PARSE_OBJECT(type, name)
 #define _MASON_EXPAND_PARSE_ARRAY_OBJECT(type, name)     _MASON_PARSE_ARRAY_OBJECT(type, name)
 
-#define _MASON_EXPAND_SERIALIZE_FIELD(type, name)        _MASON_SERIALIZE_FIELD(type, name)
+#define _MASON_EXPAND_SERIALIZE_FIELD(type, name, qual)  _MASON_CONCAT(_MASON_SERIALIZE_FIELD_, qual)(type, name)
 #define _MASON_EXPAND_SERIALIZE_ARRAY(type, name)        _MASON_SERIALIZE_ARRAY_PRIM(type, name)
 #define _MASON_EXPAND_SERIALIZE_OBJECT(type, name)       _MASON_SERIALIZE_OBJECT(type, name)
 #define _MASON_EXPAND_SERIALIZE_ARRAY_OBJECT(type, name) _MASON_SERIALIZE_ARRAY_OBJECT(type, name)

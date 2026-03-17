@@ -16,8 +16,8 @@ typedef enum {
 /* Nested object for OBJECT / ARRAY_OBJECT paths */
 
 #define Address_FIELDS(FIELD, ARRAY, OBJECT, ARRAY_OBJECT) \
-    FIELD(string, city)                                    \
-    FIELD(int32_t, zip)
+    FIELD(string, city, REQUIRED)                          \
+    FIELD(int32_t, zip, REQUIRED)
 
 MASON_STRUCT_DEFINE(Address, Address_FIELDS)
 MASON_IMPL(Address, Address_FIELDS)
@@ -25,9 +25,9 @@ MASON_IMPL(Address, Address_FIELDS)
 /* Struct that uses all categories */
 
 #define User_FIELDS(FIELD, ARRAY, OBJECT, ARRAY_OBJECT) \
-    FIELD(string, name)                                 \
-    FIELD(int32_t, age)                                 \
-    FIELD(StatusCode, status)                           \
+    FIELD(string, name, REQUIRED)                       \
+    FIELD(int32_t, age, REQUIRED)                       \
+    FIELD(StatusCode, status, REQUIRED)                 \
     ARRAY(int32_t, scores)                              \
     OBJECT(Address, address)                            \
     ARRAY_OBJECT(Address, prev_addresses)
