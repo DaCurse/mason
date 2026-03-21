@@ -52,9 +52,23 @@ typedef _MASON_OPTIONAL_TYPE(double) MASON_Optional_double;
 typedef _MASON_OPTIONAL_TYPE(string) MASON_Optional_string;
 typedef _MASON_OPTIONAL_TYPE(bool) MASON_Optional_bool;
 
+#define _MASON_OPTIONAL_ARRAY_TYPE(type) \
+    struct {                             \
+        type *items;                     \
+        size_t count;                    \
+        MASON_FieldState state;          \
+    }
+
+typedef _MASON_OPTIONAL_ARRAY_TYPE(int32_t) MASON_OptionalArray_int32_t;
+typedef _MASON_OPTIONAL_ARRAY_TYPE(int64_t) MASON_OptionalArray_int64_t;
+typedef _MASON_OPTIONAL_ARRAY_TYPE(double) MASON_OptionalArray_double;
+typedef _MASON_OPTIONAL_ARRAY_TYPE(string) MASON_OptionalArray_string;
+typedef _MASON_OPTIONAL_ARRAY_TYPE(bool) MASON_OptionalArray_bool;
+
 #define mason_opt_value(v)                {.value = v, .state = MASON_VALUE}
 #define mason_opt_null()                  {.state = MASON_NULL}
 #define mason_opt_missing()               {.state = MASON_MISSING}
+#define mason_opt_array(items_ptr, cnt)   {.items = items_ptr, .count = cnt, .state = MASON_VALUE}
 
 /* Field Type Macros */
 
@@ -63,30 +77,40 @@ typedef _MASON_OPTIONAL_TYPE(bool) MASON_Optional_bool;
 #define _MASON_FIELD_NULLABLE(type, name) MASON_Optional_##type name;
 #define _MASON_FIELD(type, name, qual)    _MASON_CONCAT(_MASON_FIELD_, qual)(type, name)
 
-#define _MASON_ARRAY(type, name) \
-    type *name;                  \
+#define _MASON_ARRAY_REQUIRED(type, name) \
+    type *name;                           \
     size_t name##_count;
+#define _MASON_ARRAY_NULLABLE(type, name)  MASON_OptionalArray_##type name;
+#define _MASON_ARRAY_OPTIONAL(type, name)  MASON_OptionalArray_##type name;
+#define _MASON_ARRAY(type, name, qual)     _MASON_CONCAT(_MASON_ARRAY_, qual)(type, name)
 
-#define _MASON_OBJECT(type, name) struct type *name;
+#define _MASON_OBJECT_REQUIRED(type, name) struct type *name;
+#define _MASON_OBJECT_NULLABLE(type, name) MASON_Optional_##type name;
+#define _MASON_OBJECT_OPTIONAL(type, name) MASON_Optional_##type name;
+#define _MASON_OBJECT(type, name, qual)    _MASON_CONCAT(_MASON_OBJECT_, qual)(type, name)
 
-#define _MASON_ARRAY_OBJECT(type, name) \
-    type *name;                         \
+#define _MASON_ARRAY_OBJECT_REQUIRED(type, name) \
+    type *name;                                  \
     size_t name##_count;
+#define _MASON_ARRAY_OBJECT_NULLABLE(type, name) MASON_OptionalArray_##type name;
+#define _MASON_ARRAY_OBJECT_OPTIONAL(type, name) MASON_OptionalArray_##type name;
+#define _MASON_ARRAY_OBJECT(type, name, qual)    _MASON_CONCAT(_MASON_ARRAY_OBJECT_, qual)(type, name)
 
 /* Struct Definition */
 
-#define MASON_STRUCT_DEFINE(struct_name, FIELDS)                                    \
-    typedef struct struct_name {                                                    \
-        FIELDS(_MASON_FIELD, _MASON_ARRAY, _MASON_OBJECT, _MASON_ARRAY_OBJECT)      \
-    } struct_name;                                                                  \
-                                                                                    \
-    typedef _MASON_OPTIONAL_TYPE(struct_name) MASON_Optional_##struct_name;         \
-                                                                                    \
-    bool struct_name##_parse_into(struct_name *obj, MASON_Parsed json);             \
-    struct_name *struct_name##_from_json(MASON_Parsed json);                        \
-    struct_name *struct_name##_from_string(const char *json_str);                   \
-    struct_name *struct_name##_from_string_sized(const char *json_str, size_t len); \
-    MASON_Parsed struct_name##_to_json(struct_name *obj);                           \
+#define MASON_STRUCT_DEFINE(struct_name, FIELDS)                                       \
+    typedef struct struct_name {                                                       \
+        FIELDS(_MASON_FIELD, _MASON_ARRAY, _MASON_OBJECT, _MASON_ARRAY_OBJECT)         \
+    } struct_name;                                                                     \
+                                                                                       \
+    typedef _MASON_OPTIONAL_TYPE(struct_name) MASON_Optional_##struct_name;            \
+    typedef _MASON_OPTIONAL_ARRAY_TYPE(struct_name) MASON_OptionalArray_##struct_name; \
+                                                                                       \
+    bool struct_name##_parse_into(struct_name *obj, MASON_Parsed json);                \
+    struct_name *struct_name##_from_json(MASON_Parsed json);                           \
+    struct_name *struct_name##_from_string(const char *json_str);                      \
+    struct_name *struct_name##_from_string_sized(const char *json_str, size_t len);    \
+    MASON_Parsed struct_name##_to_json(struct_name *obj);                              \
     string struct_name##_to_string(MASON_Parsed json, bool format);
 
 /* Type Resolution
@@ -223,42 +247,66 @@ static inline MASON_Parsed mason_create_bool(bool v) { return cJSON_CreateBool(v
         obj->name.state = MASON_MISSING;                                \
     }
 
-#define _MASON_PARSE_ARRAY_PRIM(type, name)                                                               \
-    item = cJSON_GetObjectItemCaseSensitive(json, #name);                                                 \
-    if (item && cJSON_IsArray(item)) {                                                                    \
-        obj->name##_count = (size_t)cJSON_GetArraySize(item);                                             \
-        if (obj->name##_count == 0) {                                                                     \
-            obj->name = NULL;                                                                             \
-        } else {                                                                                          \
-            MASON_ArenaMark mark = mason_arena_mark(_mason_global_arena);                                 \
-            obj->name = (type *)mason_arena_calloc(_mason_global_arena, obj->name##_count, sizeof(type)); \
-            if (!obj->name) {                                                                             \
-                obj->name##_count = 0;                                                                    \
-                return false;                                                                             \
-            }                                                                                             \
-            bool _arr_ok = true;                                                                          \
-            for (size_t i = 0; i < obj->name##_count; i++) {                                              \
-                MASON_Parsed elem = cJSON_GetArrayItem(item, (int)i);                                     \
-                if (mason_is(elem, MASON_TYPE_HINT(type))) {                                              \
-                    obj->name[i] = mason_get_owned(elem, MASON_TYPE_HINT(type));                          \
-                } else {                                                                                  \
-                    mason_arena_rewind(_mason_global_arena, mark);                                        \
-                    obj->name = NULL;                                                                     \
-                    obj->name##_count = 0;                                                                \
-                    _arr_ok = false;                                                                      \
-                    _mason_set_validation_error(#name, #type, MASON_TYPE_NAME(type), elem);               \
-                    break;                                                                                \
-                }                                                                                         \
-            }                                                                                             \
-            if (!_arr_ok)                                                                                 \
-                return false;                                                                             \
-        }                                                                                                 \
-    } else {                                                                                              \
-        _mason_set_validation_error(#name, #type "[]", MASON_TYPE_NAME(type) "[]", item);                 \
-        return false;                                                                                     \
+#define _MASON_PARSE_ARRAY_PRIM_BODY(type, name_str, arr_ptr, arr_count)                    \
+    arr_count = (size_t)cJSON_GetArraySize(item);                                           \
+    if (arr_count == 0) {                                                                   \
+        arr_ptr = NULL;                                                                     \
+    } else {                                                                                \
+        MASON_ArenaMark mark = mason_arena_mark(_mason_global_arena);                       \
+        arr_ptr = (type *)mason_arena_calloc(_mason_global_arena, arr_count, sizeof(type)); \
+        if (!arr_ptr) {                                                                     \
+            arr_count = 0;                                                                  \
+            return false;                                                                   \
+        }                                                                                   \
+        bool _arr_ok = true;                                                                \
+        for (size_t i = 0; i < arr_count; i++) {                                            \
+            MASON_Parsed elem = cJSON_GetArrayItem(item, (int)i);                           \
+            if (mason_is(elem, MASON_TYPE_HINT(type))) {                                    \
+                arr_ptr[i] = mason_get_owned(elem, MASON_TYPE_HINT(type));                  \
+            } else {                                                                        \
+                mason_arena_rewind(_mason_global_arena, mark);                              \
+                arr_ptr = NULL;                                                             \
+                arr_count = 0;                                                              \
+                _arr_ok = false;                                                            \
+                _mason_set_validation_error(name_str, #type, MASON_TYPE_NAME(type), elem);  \
+                break;                                                                      \
+            }                                                                               \
+        }                                                                                   \
+        if (!_arr_ok)                                                                       \
+            return false;                                                                   \
     }
 
-#define _MASON_PARSE_OBJECT(type, name)                                               \
+#define _MASON_PARSE_ARRAY_PRIM_REQUIRED(type, name)                                      \
+    item = cJSON_GetObjectItemCaseSensitive(json, #name);                                 \
+    if (item && cJSON_IsArray(item)) {                                                    \
+        _MASON_PARSE_ARRAY_PRIM_BODY(type, #name, obj->name, obj->name##_count)           \
+    } else {                                                                              \
+        _mason_set_validation_error(#name, #type "[]", MASON_TYPE_NAME(type) "[]", item); \
+        return false;                                                                     \
+    }
+#define _MASON_PARSE_ARRAY_PRIM_NULLABLE(type, name)                                                      \
+    item = cJSON_GetObjectItemCaseSensitive(json, #name);                                                 \
+    if (item && cJSON_IsArray(item)) {                                                                    \
+        _MASON_PARSE_ARRAY_PRIM_BODY(type, #name, obj->name.items, obj->name.count)                       \
+        obj->name.state = MASON_VALUE;                                                                    \
+    } else if (item && cJSON_IsNull(item)) {                                                              \
+        obj->name.state = MASON_NULL;                                                                     \
+    } else {                                                                                              \
+        _mason_set_validation_error(#name, #type "[] or null", MASON_TYPE_NAME(type) "[] or null", item); \
+        return false;                                                                                     \
+    }
+#define _MASON_PARSE_ARRAY_PRIM_OPTIONAL(type, name)                                \
+    item = cJSON_GetObjectItemCaseSensitive(json, #name);                           \
+    if (item && cJSON_IsArray(item)) {                                              \
+        _MASON_PARSE_ARRAY_PRIM_BODY(type, #name, obj->name.items, obj->name.count) \
+        obj->name.state = MASON_VALUE;                                              \
+    } else if (item && cJSON_IsNull(item)) {                                        \
+        obj->name.state = MASON_NULL;                                               \
+    } else {                                                                        \
+        obj->name.state = MASON_MISSING;                                            \
+    }
+
+#define _MASON_PARSE_OBJECT_REQUIRED(type, name)                                      \
     item = cJSON_GetObjectItemCaseSensitive(json, #name);                             \
     if (item && cJSON_IsObject(item)) {                                               \
         MASON_ArenaMark mark = mason_arena_mark(_mason_global_arena);                 \
@@ -278,36 +326,93 @@ static inline MASON_Parsed mason_create_bool(bool v) { return cJSON_CreateBool(v
         _mason_set_validation_error(#name, #type, "object", item);                    \
         return false;                                                                 \
     }
+#define _MASON_PARSE_OBJECT_NULLABLE(type, name)                                      \
+    item = cJSON_GetObjectItemCaseSensitive(json, #name);                             \
+    if (item && cJSON_IsObject(item)) {                                               \
+        size_t _path_saved = _mason_path_push(#name);                                 \
+        bool _ok = type##_parse_into(&obj->name.value, item);                         \
+        _mason_path_pop(_path_saved);                                                 \
+        if (!_ok) {                                                                   \
+            memset(&obj->name.value, 0, sizeof(type));                                \
+            return false;                                                             \
+        }                                                                             \
+        obj->name.state = MASON_VALUE;                                                \
+    } else if (item && cJSON_IsNull(item)) {                                          \
+        obj->name.state = MASON_NULL;                                                 \
+    } else {                                                                          \
+        _mason_set_validation_error(#name, #type " or null", "object or null", item); \
+        return false;                                                                 \
+    }
+#define _MASON_PARSE_OBJECT_OPTIONAL(type, name)              \
+    item = cJSON_GetObjectItemCaseSensitive(json, #name);     \
+    if (item && cJSON_IsObject(item)) {                       \
+        size_t _path_saved = _mason_path_push(#name);         \
+        bool _ok = type##_parse_into(&obj->name.value, item); \
+        _mason_path_pop(_path_saved);                         \
+        if (!_ok) {                                           \
+            memset(&obj->name.value, 0, sizeof(type));        \
+            return false;                                     \
+        }                                                     \
+        obj->name.state = MASON_VALUE;                        \
+    } else if (item && cJSON_IsNull(item)) {                  \
+        obj->name.state = MASON_NULL;                         \
+    } else {                                                  \
+        obj->name.state = MASON_MISSING;                      \
+    }
 
-#define _MASON_PARSE_ARRAY_OBJECT(type, name)                                                             \
-    item = cJSON_GetObjectItemCaseSensitive(json, #name);                                                 \
-    if (item && cJSON_IsArray(item)) {                                                                    \
-        obj->name##_count = (size_t)cJSON_GetArraySize(item);                                             \
-        if (obj->name##_count == 0) {                                                                     \
-            obj->name = NULL;                                                                             \
-        } else {                                                                                          \
-            MASON_ArenaMark mark = mason_arena_mark(_mason_global_arena);                                 \
-            obj->name = (type *)mason_arena_calloc(_mason_global_arena, obj->name##_count, sizeof(type)); \
-            if (!obj->name) {                                                                             \
-                obj->name##_count = 0;                                                                    \
-                return false;                                                                             \
-            }                                                                                             \
-            for (size_t i = 0; i < obj->name##_count; i++) {                                              \
-                MASON_Parsed elem = cJSON_GetArrayItem(item, (int)i);                                     \
-                size_t _path_saved = _mason_path_push_index(#name, i);                                    \
-                bool _ok = type##_parse_into(&obj->name[i], elem);                                        \
-                _mason_path_pop(_path_saved);                                                             \
-                if (!_ok) {                                                                               \
-                    mason_arena_rewind(_mason_global_arena, mark);                                        \
-                    obj->name = NULL;                                                                     \
-                    obj->name##_count = 0;                                                                \
-                    return false;                                                                         \
-                }                                                                                         \
-            }                                                                                             \
-        }                                                                                                 \
-    } else {                                                                                              \
-        _mason_set_validation_error(#name, #type "[]", "object array", item);                             \
-        return false;                                                                                     \
+#define _MASON_PARSE_ARRAY_OBJECT_BODY(type, name_str, arr_ptr, arr_count)                  \
+    arr_count = (size_t)cJSON_GetArraySize(item);                                           \
+    if (arr_count == 0) {                                                                   \
+        arr_ptr = NULL;                                                                     \
+    } else {                                                                                \
+        MASON_ArenaMark mark = mason_arena_mark(_mason_global_arena);                       \
+        arr_ptr = (type *)mason_arena_calloc(_mason_global_arena, arr_count, sizeof(type)); \
+        if (!arr_ptr) {                                                                     \
+            arr_count = 0;                                                                  \
+            return false;                                                                   \
+        }                                                                                   \
+        for (size_t i = 0; i < arr_count; i++) {                                            \
+            MASON_Parsed elem = cJSON_GetArrayItem(item, (int)i);                           \
+            size_t _path_saved = _mason_path_push_index(name_str, i);                       \
+            bool _ok = type##_parse_into(&arr_ptr[i], elem);                                \
+            _mason_path_pop(_path_saved);                                                   \
+            if (!_ok) {                                                                     \
+                mason_arena_rewind(_mason_global_arena, mark);                              \
+                arr_ptr = NULL;                                                             \
+                arr_count = 0;                                                              \
+                return false;                                                               \
+            }                                                                               \
+        }                                                                                   \
+    }
+
+#define _MASON_PARSE_ARRAY_OBJECT_REQUIRED(type, name)                            \
+    item = cJSON_GetObjectItemCaseSensitive(json, #name);                         \
+    if (item && cJSON_IsArray(item)) {                                            \
+        _MASON_PARSE_ARRAY_OBJECT_BODY(type, #name, obj->name, obj->name##_count) \
+    } else {                                                                      \
+        _mason_set_validation_error(#name, #type "[]", "object array", item);     \
+        return false;                                                             \
+    }
+#define _MASON_PARSE_ARRAY_OBJECT_NULLABLE(type, name)                                        \
+    item = cJSON_GetObjectItemCaseSensitive(json, #name);                                     \
+    if (item && cJSON_IsArray(item)) {                                                        \
+        _MASON_PARSE_ARRAY_OBJECT_BODY(type, #name, obj->name.items, obj->name.count)         \
+        obj->name.state = MASON_VALUE;                                                        \
+    } else if (item && cJSON_IsNull(item)) {                                                  \
+        obj->name.state = MASON_NULL;                                                         \
+    } else {                                                                                  \
+        _mason_set_validation_error(#name, #type "[] or null", "object array or null", item); \
+        return false;                                                                         \
+    }
+#define _MASON_PARSE_ARRAY_OBJECT_OPTIONAL(type, name)                                \
+    item = cJSON_GetObjectItemCaseSensitive(json, #name);                             \
+    if (item && cJSON_IsArray(item)) {                                                \
+        _MASON_PARSE_ARRAY_OBJECT_BODY(type, #name, obj->name.items, obj->name.count) \
+        obj->name.state = MASON_VALUE;                                                \
+    } else if (item && cJSON_IsNull(item)) {                                          \
+        obj->name.state = MASON_NULL;                                                 \
+    } else {                                                                          \
+        obj->name.state = MASON_MISSING;                                              \
     }
 
 /* Serialization Implementation */
@@ -336,47 +441,124 @@ static inline MASON_Parsed mason_create_bool(bool v) { return cJSON_CreateBool(v
         break;                                                                                      \
     }
 
-#define _MASON_SERIALIZE_ARRAY_PRIM(type, name)                                        \
-    {                                                                                  \
-        MASON_Parsed arr = cJSON_CreateArray();                                        \
-        for (size_t i = 0; i < obj->name##_count; i++) {                               \
-            cJSON_AddItemToArray(arr,                                                  \
-                                 mason_create((_MASON_TYPE_ALIAS(type))obj->name[i])); \
-        }                                                                              \
-        cJSON_AddItemToObject(json, #name, arr);                                       \
+#define _MASON_SERIALIZE_ARRAY_PRIM_BODY(type, name_str, arr_ptr, arr_count)         \
+    {                                                                                \
+        MASON_Parsed arr = cJSON_CreateArray();                                      \
+        for (size_t i = 0; i < arr_count; i++) {                                     \
+            cJSON_AddItemToArray(arr,                                                \
+                                 mason_create((_MASON_TYPE_ALIAS(type))arr_ptr[i])); \
+        }                                                                            \
+        cJSON_AddItemToObject(json, name_str, arr);                                  \
     }
 
-#define _MASON_SERIALIZE_OBJECT(type, name)              \
+#define _MASON_SERIALIZE_ARRAY_PRIM_REQUIRED(type, name) \
+    _MASON_SERIALIZE_ARRAY_PRIM_BODY(type, #name, obj->name, obj->name##_count)
+#define _MASON_SERIALIZE_ARRAY_PRIM_NULLABLE(type, name)                                \
+    switch (obj->name.state) {                                                          \
+    case MASON_VALUE:                                                                   \
+        _MASON_SERIALIZE_ARRAY_PRIM_BODY(type, #name, obj->name.items, obj->name.count) \
+        break;                                                                          \
+    case MASON_NULL:                                                                    \
+    case MASON_MISSING:                                                                 \
+        cJSON_AddItemToObject(json, #name, cJSON_CreateNull());                         \
+        break;                                                                          \
+    }
+#define _MASON_SERIALIZE_ARRAY_PRIM_OPTIONAL(type, name)                                \
+    switch (obj->name.state) {                                                          \
+    case MASON_VALUE:                                                                   \
+        _MASON_SERIALIZE_ARRAY_PRIM_BODY(type, #name, obj->name.items, obj->name.count) \
+        break;                                                                          \
+    case MASON_NULL:                                                                    \
+        cJSON_AddItemToObject(json, #name, cJSON_CreateNull());                         \
+        break;                                                                          \
+    case MASON_MISSING:                                                                 \
+        break;                                                                          \
+    }
+
+#define _MASON_SERIALIZE_OBJECT_REQUIRED(type, name)     \
     if (obj->name) {                                     \
         MASON_Parsed nested = type##_to_json(obj->name); \
         if (nested) {                                    \
             cJSON_AddItemToObject(json, #name, nested);  \
         }                                                \
     }
+#define _MASON_SERIALIZE_OBJECT_NULLABLE(type, name)            \
+    switch (obj->name.state) {                                  \
+    case MASON_VALUE: {                                         \
+        MASON_Parsed nested = type##_to_json(&obj->name.value); \
+        if (nested) {                                           \
+            cJSON_AddItemToObject(json, #name, nested);         \
+        }                                                       \
+        break;                                                  \
+    }                                                           \
+    case MASON_NULL:                                            \
+    case MASON_MISSING:                                         \
+        cJSON_AddItemToObject(json, #name, cJSON_CreateNull()); \
+        break;                                                  \
+    }
+#define _MASON_SERIALIZE_OBJECT_OPTIONAL(type, name)            \
+    switch (obj->name.state) {                                  \
+    case MASON_VALUE: {                                         \
+        MASON_Parsed nested = type##_to_json(&obj->name.value); \
+        if (nested) {                                           \
+            cJSON_AddItemToObject(json, #name, nested);         \
+        }                                                       \
+        break;                                                  \
+    }                                                           \
+    case MASON_NULL:                                            \
+        cJSON_AddItemToObject(json, #name, cJSON_CreateNull()); \
+        break;                                                  \
+    case MASON_MISSING:                                         \
+        break;                                                  \
+    }
 
-#define _MASON_SERIALIZE_ARRAY_OBJECT(type, name)                \
-    {                                                            \
-        MASON_Parsed arr = cJSON_CreateArray();                  \
-        for (size_t i = 0; i < obj->name##_count; i++) {         \
-            MASON_Parsed nested = type##_to_json(&obj->name[i]); \
-            if (nested) {                                        \
-                cJSON_AddItemToArray(arr, nested);               \
-            }                                                    \
-        }                                                        \
-        cJSON_AddItemToObject(json, #name, arr);                 \
+#define _MASON_SERIALIZE_ARRAY_OBJECT_BODY(type, name_str, arr_ptr, arr_count) \
+    {                                                                          \
+        MASON_Parsed arr = cJSON_CreateArray();                                \
+        for (size_t i = 0; i < arr_count; i++) {                               \
+            MASON_Parsed nested = type##_to_json(&arr_ptr[i]);                 \
+            if (nested) {                                                      \
+                cJSON_AddItemToArray(arr, nested);                             \
+            }                                                                  \
+        }                                                                      \
+        cJSON_AddItemToObject(json, name_str, arr);                            \
+    }
+
+#define _MASON_SERIALIZE_ARRAY_OBJECT_REQUIRED(type, name) \
+    _MASON_SERIALIZE_ARRAY_OBJECT_BODY(type, #name, obj->name, obj->name##_count)
+#define _MASON_SERIALIZE_ARRAY_OBJECT_NULLABLE(type, name)                                \
+    switch (obj->name.state) {                                                            \
+    case MASON_VALUE:                                                                     \
+        _MASON_SERIALIZE_ARRAY_OBJECT_BODY(type, #name, obj->name.items, obj->name.count) \
+        break;                                                                            \
+    case MASON_NULL:                                                                      \
+    case MASON_MISSING:                                                                   \
+        cJSON_AddItemToObject(json, #name, cJSON_CreateNull());                           \
+        break;                                                                            \
+    }
+#define _MASON_SERIALIZE_ARRAY_OBJECT_OPTIONAL(type, name)                                \
+    switch (obj->name.state) {                                                            \
+    case MASON_VALUE:                                                                     \
+        _MASON_SERIALIZE_ARRAY_OBJECT_BODY(type, #name, obj->name.items, obj->name.count) \
+        break;                                                                            \
+    case MASON_NULL:                                                                      \
+        cJSON_AddItemToObject(json, #name, cJSON_CreateNull());                           \
+        break;                                                                            \
+    case MASON_MISSING:                                                                   \
+        break;                                                                            \
     }
 
 /* X-Macro Expansion Helpers */
 
-#define _MASON_EXPAND_PARSE_FIELD(type, name, qual)      _MASON_CONCAT(_MASON_PARSE_FIELD_, qual)(type, name)
-#define _MASON_EXPAND_PARSE_ARRAY(type, name)            _MASON_PARSE_ARRAY_PRIM(type, name)
-#define _MASON_EXPAND_PARSE_OBJECT(type, name)           _MASON_PARSE_OBJECT(type, name)
-#define _MASON_EXPAND_PARSE_ARRAY_OBJECT(type, name)     _MASON_PARSE_ARRAY_OBJECT(type, name)
+#define _MASON_EXPAND_PARSE_FIELD(type, name, qual)            _MASON_CONCAT(_MASON_PARSE_FIELD_, qual)(type, name)
+#define _MASON_EXPAND_PARSE_ARRAY(type, name, qual)            _MASON_CONCAT(_MASON_PARSE_ARRAY_PRIM_, qual)(type, name)
+#define _MASON_EXPAND_PARSE_OBJECT(type, name, qual)           _MASON_CONCAT(_MASON_PARSE_OBJECT_, qual)(type, name)
+#define _MASON_EXPAND_PARSE_ARRAY_OBJECT(type, name, qual)     _MASON_CONCAT(_MASON_PARSE_ARRAY_OBJECT_, qual)(type, name)
 
-#define _MASON_EXPAND_SERIALIZE_FIELD(type, name, qual)  _MASON_CONCAT(_MASON_SERIALIZE_FIELD_, qual)(type, name)
-#define _MASON_EXPAND_SERIALIZE_ARRAY(type, name)        _MASON_SERIALIZE_ARRAY_PRIM(type, name)
-#define _MASON_EXPAND_SERIALIZE_OBJECT(type, name)       _MASON_SERIALIZE_OBJECT(type, name)
-#define _MASON_EXPAND_SERIALIZE_ARRAY_OBJECT(type, name) _MASON_SERIALIZE_ARRAY_OBJECT(type, name)
+#define _MASON_EXPAND_SERIALIZE_FIELD(type, name, qual)        _MASON_CONCAT(_MASON_SERIALIZE_FIELD_, qual)(type, name)
+#define _MASON_EXPAND_SERIALIZE_ARRAY(type, name, qual)        _MASON_CONCAT(_MASON_SERIALIZE_ARRAY_PRIM_, qual)(type, name)
+#define _MASON_EXPAND_SERIALIZE_OBJECT(type, name, qual)       _MASON_CONCAT(_MASON_SERIALIZE_OBJECT_, qual)(type, name)
+#define _MASON_EXPAND_SERIALIZE_ARRAY_OBJECT(type, name, qual) _MASON_CONCAT(_MASON_SERIALIZE_ARRAY_OBJECT_, qual)(type, name)
 
 /* Main Implementation Macros */
 

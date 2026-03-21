@@ -28,9 +28,9 @@ MASON_IMPL(Address, Address_FIELDS)
     FIELD(string, name, REQUIRED)                       \
     FIELD(int32_t, age, REQUIRED)                       \
     FIELD(StatusCode, status, REQUIRED)                 \
-    ARRAY(int32_t, scores)                              \
-    OBJECT(Address, address)                            \
-    ARRAY_OBJECT(Address, prev_addresses)
+    ARRAY(int32_t, scores, REQUIRED)                    \
+    OBJECT(Address, address, REQUIRED)                  \
+    ARRAY_OBJECT(Address, prev_addresses, REQUIRED)
 
 MASON_STRUCT_DEFINE(User, User_FIELDS)
 MASON_IMPL(User, User_FIELDS)

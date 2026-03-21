@@ -29,25 +29,25 @@ typedef enum {
     FIELD(int32_t, type, REQUIRED)                                  \
     FIELD(int64_t, created_at, REQUIRED)                            \
     FIELD(string, url, REQUIRED)                                    \
-    ARRAY_OBJECT(IdentifyActivityButton, buttons)
+    ARRAY_OBJECT(IdentifyActivityButton, buttons, REQUIRED)
 
 // https://discord.com/developers/docs/events/gateway-events#presence-update
 #define IdentifyPresence_FIELDS(FIELD, ARRAY, OBJECT, ARRAY_OBJECT) \
     FIELD(int64_t, since, REQUIRED)                                 \
     FIELD(string, status, REQUIRED)                                 \
     FIELD(bool, afk, REQUIRED)                                      \
-    ARRAY_OBJECT(IdentifyActivity, activities)
+    ARRAY_OBJECT(IdentifyActivity, activities, REQUIRED)
 
 #define IdentifyEvent_FIELDS(FIELD, ARRAY, OBJECT, ARRAY_OBJECT) \
     FIELD(string, token, REQUIRED)                               \
-    OBJECT(IdentifyProperties, properties)                       \
-    OBJECT(IdentifyPresence, presence)                           \
+    OBJECT(IdentifyProperties, properties, REQUIRED)             \
+    OBJECT(IdentifyPresence, presence, REQUIRED)                 \
     FIELD(int32_t, intents, REQUIRED)
 
 // https://discord.com/developers/docs/events/gateway-events#payload-structure
 #define GatewayEventPayload_FIELDS(FIELD, ARRAY, OBJECT, ARRAY_OBJECT) \
     FIELD(GatewayOpcodeSend, op, REQUIRED)                             \
-    OBJECT(IdentifyEventData, d)
+    OBJECT(IdentifyEventData, d, REQUIRED)
 
 MASON_STRUCT_DEFINE(IdentifyProperties, IdentifyProperties_FIELDS)
 MASON_STRUCT_DEFINE(IdentifyActivityButton, IdentifyActivityButton_FIELDS)

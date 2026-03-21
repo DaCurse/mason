@@ -17,13 +17,13 @@
     FIELD(int64_t, id, REQUIRED)                          \
     FIELD(double, score, REQUIRED)                        \
     FIELD(bool, active, REQUIRED)                         \
-    ARRAY(string, tags)                                   \
-    OBJECT(Address, address)                              \
-    ARRAY_OBJECT(Address, history)
+    ARRAY(string, tags, REQUIRED)                         \
+    OBJECT(Address, address, REQUIRED)                    \
+    ARRAY_OBJECT(Address, history, REQUIRED)
 
 #define Report_FIELDS(FIELD, ARRAY, OBJECT, ARRAY_OBJECT) \
-    OBJECT(Person, owner)                                 \
-    ARRAY_OBJECT(Person, people)
+    OBJECT(Person, owner, REQUIRED)                       \
+    ARRAY_OBJECT(Person, people, REQUIRED)
 
 MASON_STRUCT_DEFINE(Address, Address_FIELDS)
 MASON_STRUCT_DEFINE(Person, Person_FIELDS)
